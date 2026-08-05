@@ -7,11 +7,11 @@
   'use strict';
 
   const STORE_KEY = 'pulse_v1';
+  const IDENTITY_KEY = 'pulse_identity'; // device-local: which developer this browser is logged in as
   const STATUSES = [
-    { id: 'backlog',     label: 'Backlog' },
-    { id: 'in-progress', label: 'In progress' },
     { id: 'blocked',     label: 'Blocked' },
-    { id: 'review',      label: 'In review' },
+    { id: 'backlog',     label: 'Ready to start' },
+    { id: 'in-progress', label: 'In progress' },
     { id: 'done',        label: 'Done' },
   ];
   const AVATAR_COLORS = ['#FF8A3D', '#34D1BF', '#9B8CFF', '#5B8DEF', '#F2C94C', '#EF7BAE'];
@@ -24,7 +24,7 @@
   const DEFAULT_SUBTASK_TEMPLATE = ['Development', 'Unit testing', 'Code merge and build', 'Deploy to perf'];
   // Same underlying status values power the board for every ticket type, but
   // bugs read using the standard defect lifecycle wording.
-  const BUG_STATUS_LABEL = { backlog: 'Open', 'in-progress': 'In Progress', blocked: 'Blocked', review: 'Resolved', done: 'Closed' };
+  const BUG_STATUS_LABEL = { backlog: 'Open', 'in-progress': 'In Progress', blocked: 'Blocked', done: 'Closed' };
 
   /* ---------------- State ---------------- */
   function migrateState(s){
@@ -33,11 +33,19 @@
     if (!Array.isArray(s.settings.subtaskTemplate) || !s.settings.subtaskTemplate.length){
       s.settings.subtaskTemplate = DEFAULT_SUBTASK_TEMPLATE.slice();
     }
+    if (!s.settings.standupTime) s.settings.standupTime = '10:30';
+    if (!s.settings.eodTime) s.settings.eodTime = '19:00';
+    if (!s.settings.notifyTime) s.settings.notifyTime = '19:15';
+    s.developers.forEach(d => { if (typeof d.isAdmin !== 'boolean') d.isAdmin = false; });
+    if (!s.developers.some(d => d.isAdmin) && s.developers[0]) s.developers[0].isAdmin = true;
     s.tickets.forEach(t => {
       if (!Array.isArray(t.subtasks)){
         t.subtasks = s.settings.subtaskTemplate.map(name => ({ id: uid('s'), name, done: t.status === 'done' }));
       }
       if (!Array.isArray(t.scenarios)) t.scenarios = [];
+      if (t.status === 'review') t.status = 'in-progress'; // "In review" column was retired
+      if (t.type === 'change-request') t.type = 'task'; // Change Request type was retired
+      if (!Array.isArray(t.dependsOn)) t.dependsOn = [];
     });
     return s;
   }
@@ -48,7 +56,9 @@
     search: '',
     boardAssigneeFilter: '',
     tableFilters: { type: '', status: '', assignee: '' },
-    timesheetDev: '',
+    reportPeriod: 'weekly',
+    adminTab: 'dashboard',
+    adminResourceFilter: '',
   };
 
   const LEGACY_STORE_KEY = 'trackline_v1'; // pre-rename key, migrated below if found
@@ -88,7 +98,7 @@
       { id: 'dev_hammed',    name: 'Hammed',    role: 'Full-stack Developer', color: AVATAR_COLORS[1] },
       { id: 'dev_arul',      name: 'Arul',      role: 'Frontend Developer', color: AVATAR_COLORS[2] },
       { id: 'dev_rajeshari', name: 'Rajeshari', role: 'QA Engineer',        color: AVATAR_COLORS[3] },
-      { id: 'dev_naveen',    name: 'Naveen',    role: 'Tech Lead',          color: AVATAR_COLORS[4] },
+      { id: 'dev_naveen',    name: 'Naveen',    role: 'Tech Lead',          color: AVATAR_COLORS[4], isAdmin: true },
     ];
 
     const epics = [
@@ -142,7 +152,7 @@
       },
       {
         id: uid('t'), ticketNumber: 'CCS-458', title: 'QA pass: pre-approved hours workflow',
-        type: 'task', status: 'review', assignee: 'dev_rajeshari', priority: 'medium',
+        type: 'task', status: 'in-progress', assignee: 'dev_rajeshari', priority: 'medium',
         estimate: 4, storyPoints: 2, epicId: epics[0].id, dependsOn: [], blockerNote: '',
         description: 'Verify pre-approved hours process end to end.',
         subtasks: mkSubtasks(3), createdAt: todayISO(-1),
@@ -174,6 +184,8 @@
 
   /* ---------------- Derived helpers ---------------- */
   function devById(id){ return state.developers.find(d => d.id === id); }
+  function currentUser(){ return devById(localStorage.getItem(IDENTITY_KEY)); }
+  function isCurrentUserAdmin(){ const u = currentUser(); return !!(u && u.isAdmin); }
   function ticketById(id){ return state.tickets.find(t => t.id === id); }
   function epicById(id){ return state.epics.find(e => e.id === id); }
 
@@ -207,7 +219,7 @@
 
   function effectiveStatus(ticket){
     // Auto-surface blocked state when dependencies aren't done, unless already delivered.
-    if (ticket.status === 'done' || ticket.status === 'review') return ticket.status;
+    if (ticket.status === 'done') return ticket.status;
     if (unmetDeps(ticket).length > 0) return 'blocked';
     return ticket.status;
   }
@@ -256,9 +268,26 @@
     board: ['Board', 'Drag cards across statuses'],
     tickets: ['Tickets', 'All stories, tasks and bugs'],
     dependencies: ['Dependencies', 'What is blocking what'],
-    timesheet: ['Timesheet', 'Morning (30m) / Evening (30m) check-ins'],
+    timesheet: ['Timesheet', 'Your logged hours'],
     team: ['Team', 'Workload and delivery by developer'],
+    admin: ['Admin', 'Team-wide activity, filterable by resource'],
   };
+
+  const SEARCH_VISIBLE_VIEWS = ['board', 'tickets', 'dependencies'];
+
+  function refreshIdentityUI(){
+    const u = currentUser();
+    document.getElementById('identityName').textContent = u ? u.name : 'Choose who you are';
+    const avatarEl = document.getElementById('identityAvatar');
+    if (u){
+      avatarEl.textContent = initials(u.name);
+      avatarEl.style.background = u.color;
+    } else {
+      avatarEl.textContent = '?';
+      avatarEl.style.background = '#2A3140';
+    }
+    document.getElementById('adminNavLink').hidden = !isCurrentUserAdmin();
+  }
 
   function setView(view){
     ui.view = view;
@@ -267,35 +296,41 @@
     });
     const [title, sub] = viewTitles[view];
     document.getElementById('viewTitle').textContent = title;
-    document.getElementById('viewSubtitle').textContent = sub;
+    document.getElementById('viewSubtitle').textContent =
+      view === 'dashboard' ? `Standup at ${state.settings.standupTime} · EOD plan due ${state.settings.eodTime}` : sub;
+    document.getElementById('searchWrap').hidden = !SEARCH_VISIBLE_VIEWS.includes(view);
+    refreshIdentityUI();
     render();
   }
 
   /* ---------------- Render router ---------------- */
   function render(){
     const root = document.getElementById('view');
-    if (ui.view === 'dashboard') root.innerHTML = renderDashboard();
+    if (ui.view === 'dashboard') root.innerHTML = renderDashboard(currentUser() ? currentUser().id : null);
     else if (ui.view === 'epics') root.innerHTML = renderEpics();
     else if (ui.view === 'board') root.innerHTML = renderBoard();
     else if (ui.view === 'tickets') root.innerHTML = renderTickets();
     else if (ui.view === 'dependencies') root.innerHTML = renderDependencies();
     else if (ui.view === 'timesheet') root.innerHTML = renderTimesheet();
     else if (ui.view === 'team') root.innerHTML = renderTeam();
+    else if (ui.view === 'admin') root.innerHTML = renderAdmin();
     bindViewEvents();
   }
 
   /* ---------------- Dashboard ---------------- */
-  function renderDashboard(){
-    const tickets = state.tickets;
+  function renderDashboard(filterAssignee){
+    const tickets = filterAssignee ? state.tickets.filter(t => t.assignee === filterAssignee) : state.tickets;
     const inProgress = tickets.filter(t => effectiveStatus(t) === 'in-progress').length;
     const blocked = tickets.filter(t => effectiveStatus(t) === 'blocked').length;
     const doneThisWeek = tickets.filter(t => t.status === 'done').length;
     const totalEstimate = tickets.reduce((s,t) => s + Number(t.estimate||0), 0);
-    const totalLogged = state.timeLogs.reduce((s,l) => s + Number(l.hours||0), 0);
+    const logsInScope = filterAssignee ? state.timeLogs.filter(l => l.devId === filterAssignee) : state.timeLogs;
+    const totalLogged = logsInScope.reduce((s,l) => s + Number(l.hours||0), 0);
     const totalPoints = tickets.reduce((s,t) => s + Number(t.storyPoints||0), 0);
     const pointsDone = tickets.filter(t => t.status === 'done').reduce((s,t) => s + Number(t.storyPoints||0), 0);
 
-    const hoursByDev = state.developers.map(d => {
+    const devsInScope = filterAssignee ? state.developers.filter(d => d.id === filterAssignee) : state.developers;
+    const hoursByDev = devsInScope.map(d => {
       const logs = state.timeLogs.filter(l => l.devId === d.id && withinLastNDays(l.date, 7));
       const am = logs.filter(l => l.session === 'AM').reduce((s,l)=>s+Number(l.hours||0),0);
       const pm = logs.filter(l => l.session === 'PM').reduce((s,l)=>s+Number(l.hours||0),0);
@@ -338,7 +373,7 @@
       <div class="dash-grid">
         <div class="panel">
           <div class="panel__head">
-            <h3>Hours this week by developer</h3>
+            <h3>Hours this week${filterAssignee ? '' : ' by developer'}</h3>
             <span class="hint">AM + PM sessions</span>
           </div>
           ${hoursByDev.map(h => `
@@ -399,7 +434,7 @@
     if (type === 'bug' && BUG_STATUS_LABEL[id]) return BUG_STATUS_LABEL[id];
     return (STATUSES.find(s => s.id===id) || {}).label || id;
   }
-  const TYPE_LABEL = { story: 'Story', task: 'Task', bug: 'Bug', 'change-request': 'Change Request', enhancement: 'Enhancement' };
+  const TYPE_LABEL = { story: 'Story', task: 'Task', bug: 'Bug', enhancement: 'Enhancement' };
   function labelForType(id){ return TYPE_LABEL[id] || id; }
 
   /* ---------------- Epics ---------------- */
@@ -552,7 +587,6 @@
           <option value="story" ${type==='story'?'selected':''}>Story</option>
           <option value="task" ${type==='task'?'selected':''}>Task</option>
           <option value="bug" ${type==='bug'?'selected':''}>Bug</option>
-          <option value="change-request" ${type==='change-request'?'selected':''}>Change Request</option>
           <option value="enhancement" ${type==='enhancement'?'selected':''}>Enhancement</option>
         </select>
         <select class="select-chip" id="filterStatus">
@@ -596,7 +630,11 @@
                 </td>
                 <td>${(() => { const sp = subtasksProgress(t); return sp.total ? `<span class="checklist-pill${sp.done===sp.total?' checklist-pill--complete':''}"><svg viewBox="0 0 16 16" fill="none"><path d="M3.5 8.5 6.5 11.5 12.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>${sp.done}/${sp.total}</span>` : '<span class="dep-chip">—</span>'; })()}</td>
                 <td><div class="dep-chips">${deps.length ? deps.map(d => `<span class="dep-chip">${escapeHTML(d.ticketNumber)}</span>`).join('') : '<span class="dep-chip">—</span>'}</div></td>
-                <td><span class="badge badge--status-${effectiveStatus(t)}"><span class="dot dot--${effectiveStatus(t)}"></span>${labelForStatus(effectiveStatus(t), t.type)}</span></td>
+                <td onclick="event.stopPropagation()">
+                  <select class="status-inline-select" data-status-select="${t.id}">
+                    ${STATUSES.map(s => `<option value="${s.id}" ${effectiveStatus(t)===s.id?'selected':''}>${labelForStatus(s.id, t.type)}</option>`).join('')}
+                  </select>
+                </td>
               </tr>`;
             }).join('') || `<tr><td colspan="11"><div class="empty"><p>No tickets match these filters.</p></div></td></tr>`}
           </tbody>
@@ -633,7 +671,7 @@
       <div class="panel" style="margin-bottom:16px">
         <div class="panel__head">
           <h3>Dependency map</h3>
-          <span class="hint">${edgesCount} link${edgesCount===1?'':'s'} · left = no dependencies, right = deepest chain</span>
+          <span class="hint">${edgesCount} link${edgesCount===1?'':'s'} · drag a ticket onto another to mark it as depending on it</span>
         </div>
         <div class="dep-layers">
           ${layers.map((layerTickets, i) => `
@@ -642,7 +680,7 @@
               ${layerTickets.map(t => {
                 const deps = unmetDeps(t);
                 return `
-                <div class="dep-node ${t.status==='done'?'dep-node--done':''}" data-id="${t.id}">
+                <div class="dep-node ${t.status==='done'?'dep-node--done':''}" data-id="${t.id}" draggable="true">
                   <div class="dep-node__id mono">${escapeHTML(t.ticketNumber)}</div>
                   <div class="dep-node__title">${escapeHTML(t.title)}</div>
                   ${deps.length ? `<div class="dep-node__edges">
@@ -679,67 +717,73 @@
   }
 
   /* ---------------- Timesheet ---------------- */
-  function renderTimesheet(){
-    let logs = [...state.timeLogs];
-    if (ui.timesheetDev) logs = logs.filter(l => l.devId === ui.timesheetDev);
-    logs.sort((a,b) => b.date.localeCompare(a.date) || (a.session==='AM'?-1:1));
-
+  function renderTimesheetList(logs, opts={}){
+    logs = [...logs].sort((a,b) => b.date.localeCompare(a.date) || (a.session==='AM'?-1:1));
     const byDate = {};
     logs.forEach(l => { (byDate[l.date] = byDate[l.date] || []).push(l); });
     const dates = Object.keys(byDate).sort((a,b) => b.localeCompare(a));
+    if (!dates.length) return `<div class="empty"><p>No time logged yet.${opts.showLogButton ? ' Use "Log time" to add an entry.' : ''}</p></div>`;
+    return dates.map(date => {
+      const dayLogs = byDate[date];
+      const dayTotal = dayLogs.reduce((s,l) => s + Number(l.hours||0), 0);
+      return `
+      <div class="day-group">
+        <div class="day-group__head"><span>${fmtDate(date)}</span><span class="rule"></span><span>${dayTotal}h</span></div>
+        ${dayLogs.map(l => {
+          const dev = devById(l.devId);
+          const t = l.ticketId ? ticketById(l.ticketId) : null;
+          return `
+          <div class="log-row" data-id="${l.id}">
+            <span class="session-pill session-pill--${l.session}">${l.session}</span>
+            <span class="log-row__dev">${avatarHTML(l.devId)} ${dev ? escapeHTML(dev.name) : 'Unknown'}</span>
+            <span class="mono" style="color:var(--text-dim)">${t ? escapeHTML(t.ticketNumber) + ' · ' + escapeHTML(t.title) : 'No ticket · standup / planning'}</span>
+            <span class="log-row__hours">${l.hours}h</span>
+            <span class="log-row__note">${escapeHTML(l.note || '')}</span>
+            <button class="icon-btn deleteLogBtn" data-id="${l.id}" aria-label="Delete entry">
+              <svg viewBox="0 0 16 16" fill="none"><path d="M3 4.5h10M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M4.5 4.5 5 13a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l.5-8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }).join('');
+  }
 
-    const weekTotal = state.timeLogs.filter(l => withinLastNDays(l.date, 7) && (!ui.timesheetDev || l.devId === ui.timesheetDev))
-      .reduce((s,l) => s + Number(l.hours||0), 0);
+  function renderTimesheet(){
+    const me = currentUser();
+    if (!me) return `<div class="empty"><p>Choose who you are to see your timesheet.</p></div>`;
+    const logs = state.timeLogs.filter(l => l.devId === me.id);
+    const weekTotal = logs.filter(l => withinLastNDays(l.date, 7)).reduce((s,l) => s + Number(l.hours||0), 0);
 
     return `
       <div class="timesheet-toolbar">
-        <select class="select-chip" id="timesheetDevFilter">
-          <option value="">Whole team</option>
-          ${state.developers.map(d => `<option value="${d.id}" ${ui.timesheetDev===d.id?'selected':''}>${escapeHTML(d.name)}</option>`).join('')}
-        </select>
-        <span class="hint" style="margin-left:auto">${weekTotal}h logged in the last 7 days</span>
-        <button class="btn btn--primary btn--sm" id="logTimeBtn">
+        <span class="hint">${weekTotal}h logged in the last 7 days</span>
+        <button class="btn btn--primary btn--sm" id="logTimeBtn" style="margin-left:auto">
           <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           Log time
         </button>
       </div>
-      ${dates.length ? dates.map(date => {
-        const dayLogs = byDate[date];
-        const dayTotal = dayLogs.reduce((s,l) => s + Number(l.hours||0), 0);
-        return `
-        <div class="day-group">
-          <div class="day-group__head"><span>${fmtDate(date)}</span><span class="rule"></span><span>${dayTotal}h</span></div>
-          ${dayLogs.map(l => {
-            const dev = devById(l.devId);
-            const t = l.ticketId ? ticketById(l.ticketId) : null;
-            return `
-            <div class="log-row" data-id="${l.id}">
-              <span class="session-pill session-pill--${l.session}">${l.session}</span>
-              <span class="log-row__dev">${avatarHTML(l.devId)} ${dev ? escapeHTML(dev.name) : 'Unknown'}</span>
-              <span class="mono" style="color:var(--text-dim)">${t ? escapeHTML(t.ticketNumber) + ' · ' + escapeHTML(t.title) : 'No ticket · standup / planning'}</span>
-              <span class="log-row__hours">${l.hours}h</span>
-              <span class="log-row__note">${escapeHTML(l.note || '')}</span>
-              <button class="icon-btn deleteLogBtn" data-id="${l.id}" aria-label="Delete entry">
-                <svg viewBox="0 0 16 16" fill="none"><path d="M3 4.5h10M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M4.5 4.5 5 13a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l.5-8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
-              </button>
-            </div>`;
-          }).join('')}
-        </div>`;
-      }).join('') : `<div class="empty"><p>No time logged yet. Use "Log time" to add a morning or evening entry.</p></div>`}
+      ${renderTimesheetList(logs, { showLogButton: true })}
     `;
   }
 
   /* ---------------- Team ---------------- */
-  function devAnalytics(dev){
+  const REPORT_PERIODS = [
+    { id: 'daily',   label: 'Daily',   days: 1 },
+    { id: 'weekly',  label: 'Weekly',  days: 7 },
+    { id: 'monthly', label: 'Monthly', days: 30 },
+    { id: 'yearly',  label: 'Yearly',  days: 365 },
+  ];
+
+  function devAnalytics(dev, periodDays){
     const myTickets = state.tickets.filter(t => t.assignee === dev.id);
     const stories = myTickets.filter(t => t.type === 'story').length;
     const tasks = myTickets.filter(t => t.type === 'task').length;
     const bugs = myTickets.filter(t => t.type === 'bug').length;
-    const changeRequests = myTickets.filter(t => t.type === 'change-request').length;
     const enhancements = myTickets.filter(t => t.type === 'enhancement').length;
 
     const estimateTotal = myTickets.reduce((s,t) => s + Number(t.estimate||0), 0);
-    const loggedTotal = myTickets.reduce((s,t) => s + actualHours(t.id), 0);
+    const periodLogs = state.timeLogs.filter(l => l.devId === dev.id && (!periodDays || withinLastNDays(l.date, periodDays)));
+    const loggedTotal = periodLogs.reduce((s,l) => s + Number(l.hours||0), 0);
     const remaining = myTickets
       .filter(t => t.status !== 'done')
       .reduce((s,t) => s + Math.max(0, Number(t.estimate||0) - actualHours(t.id)), 0);
@@ -757,85 +801,57 @@
     else if (avgDoneRatio != null && avgDoneRatio <= 0.85) status = 'ahead';
     else status = 'on-track';
 
-    return { myTickets, stories, tasks, bugs, changeRequests, enhancements, estimateTotal, loggedTotal, remaining, utilizationPct, status };
+    return { myTickets, stories, tasks, bugs, enhancements, estimateTotal, loggedTotal, remaining, utilizationPct, status };
   }
 
   const RAG_LABEL = { behind: 'Behind', 'on-track': 'On track', ahead: 'Ahead' };
 
-  function renderTeam(){
-    return `
-      <div class="team-grid">
-        ${state.developers.map(d => {
-          const myTickets = state.tickets.filter(t => t.assignee === d.id);
-          const active = myTickets.filter(t => !['done'].includes(t.status)).length;
-          const weekHours = state.timeLogs.filter(l => l.devId === d.id && withinLastNDays(l.date, 7)).reduce((s,l)=>s+Number(l.hours||0),0);
-          const estimateSum = myTickets.filter(t => t.status !== 'done').reduce((s,t)=>s+Number(t.estimate||0),0);
-          const loggedSum = myTickets.reduce((s,t)=>s+actualHours(t.id),0);
-          const pct = estimateSum ? Math.min(100, Math.round(loggedSum/estimateSum*100)) : (loggedSum ? 100 : 0);
-          const pointsTotal = myTickets.reduce((s,t)=>s+Number(t.storyPoints||0),0);
-          const pointsDone = myTickets.filter(t=>t.status==='done').reduce((s,t)=>s+Number(t.storyPoints||0),0);
-          return `
-          <div class="team-card">
-            <div class="team-card__head">
-              ${avatarHTML(d.id, 'lg')}
-              <div>
-                <div class="team-card__name">${escapeHTML(d.name)}</div>
-                <div class="team-card__role">${escapeHTML(d.role)}</div>
-              </div>
-            </div>
-            <div class="team-card__stats">
-              <div>
-                <div class="team-card__stat-num">${active}</div>
-                <div class="team-card__stat-label">Active tickets</div>
-              </div>
-              <div>
-                <div class="team-card__stat-num">${weekHours}h</div>
-                <div class="team-card__stat-label">This week</div>
-              </div>
-              <div>
-                <div class="team-card__stat-num">${pointsDone}/${pointsTotal}</div>
-                <div class="team-card__stat-label">Points done</div>
-              </div>
-            </div>
-            <div class="team-card__stat-label">Estimate progress</div>
-            <div class="team-card__bar"><div class="team-card__bar-fill" style="width:${pct}%;background:${pct>=100?'var(--teal)':'var(--amber)'}"></div></div>
-          </div>`;
-        }).join('')}
-      </div>
+  function renderTeam(filterAssignee){
+    const period = REPORT_PERIODS.find(p => p.id === ui.reportPeriod) || REPORT_PERIODS[1];
+    const devs = filterAssignee ? state.developers.filter(d => d.id === filterAssignee) : state.developers;
 
-      <div class="panel" style="margin-top:16px" id="reportPanel">
+    return `
+      <div class="panel" id="reportPanel">
         <div class="panel__head">
           <h3>Resource utilization &amp; performance</h3>
           <span class="hint">Per developer, plus team-wide totals</span>
         </div>
-        <div class="table-toolbar" style="margin-bottom:16px">
-          <button class="btn btn--ghost btn--sm" id="exportCsvBtn">
-            <svg viewBox="0 0 20 20" fill="none"><path d="M10 3v10m0 0-3.5-3.5M10 13l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15.5v1a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5v-1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-            Download CSV
-          </button>
-          <button class="btn btn--ghost btn--sm" id="printReportBtn">
-            <svg viewBox="0 0 20 20" fill="none"><path d="M6 7V3.5h8V7M6 14.5h8V17H6v-2.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><rect x="3.5" y="7" width="13" height="7.5" rx="1.2" stroke="currentColor" stroke-width="1.5"/></svg>
-            Print / Save PDF
-          </button>
+        <div class="table-toolbar" style="margin-bottom:16px;justify-content:space-between">
+          <div class="period-tabs" id="periodTabs">
+            ${REPORT_PERIODS.map(p => `<button type="button" class="period-tab${p.id===period.id?' is-active':''}" data-period="${p.id}">${p.label}</button>`).join('')}
+          </div>
+          <div style="display:flex;gap:10px">
+            ${filterAssignee === undefined ? `<button class="btn btn--ghost btn--sm" id="addTeamMemberBtn">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              Add team member
+            </button>` : ''}
+            <button class="btn btn--ghost btn--sm" id="exportCsvBtn">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M10 3v10m0 0-3.5-3.5M10 13l3.5-3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/><path d="M4 15.5v1a1.5 1.5 0 0 0 1.5 1.5h9a1.5 1.5 0 0 0 1.5-1.5v-1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+              Download CSV
+            </button>
+            <button class="btn btn--ghost btn--sm" id="printReportBtn">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M6 7V3.5h8V7M6 14.5h8V17H6v-2.5Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/><rect x="3.5" y="7" width="13" height="7.5" rx="1.2" stroke="currentColor" stroke-width="1.5"/></svg>
+              Print / Save PDF
+            </button>
+          </div>
         </div>
         <div class="table-wrap">
           <table class="data-table">
             <thead>
               <tr>
-                <th>Developer</th><th>Stories</th><th>Tasks</th><th>Bugs</th><th>CR</th><th>Enh.</th>
-                <th>Estimated</th><th>Utilized</th><th>Remaining</th><th>Util. %</th><th>Pace</th>
+                <th>Developer</th><th>Stories</th><th>Tasks</th><th>Bugs</th><th>Enh.</th>
+                <th>Estimated</th><th>Utilized (${period.label.toLowerCase()})</th><th>Remaining</th><th>Util. %</th><th>Pace</th>
               </tr>
             </thead>
             <tbody>
-              ${state.developers.map(d => {
-                const a = devAnalytics(d);
+              ${devs.map(d => {
+                const a = devAnalytics(d, period.days);
                 return `
                 <tr>
-                  <td>${avatarHTML(d.id)} ${escapeHTML(d.name)}</td>
+                  <td>${avatarHTML(d.id)} ${escapeHTML(d.name)}${d.isAdmin ? ' <span class="epic-tag">Admin</span>' : ''}</td>
                   <td class="mono">${a.stories}</td>
                   <td class="mono">${a.tasks}</td>
                   <td class="mono">${a.bugs}</td>
-                  <td class="mono">${a.changeRequests}</td>
                   <td class="mono">${a.enhancements}</td>
                   <td class="mono">${a.estimateTotal}h</td>
                   <td class="mono">${a.loggedTotal}h</td>
@@ -852,6 +868,73 @@
           <strong>Ahead</strong>: delivered tickets averaged ≤85% of their estimate.
           <strong>On track</strong>: otherwise.
         </p>
+      </div>
+    `;
+  }
+
+  /* ---------------- Admin ---------------- */
+  const ADMIN_TABS = [
+    { id: 'dashboard',    label: 'Dashboard' },
+    { id: 'utilization',  label: 'Resource Utilization' },
+    { id: 'timesheet',    label: 'Timesheet' },
+    { id: 'tickets',      label: 'Tickets' },
+    { id: 'settings',     label: 'Settings' },
+  ];
+
+  function renderAdmin(){
+    if (!isCurrentUserAdmin()){
+      return `<div class="empty"><p>This area is for admins only.</p></div>`;
+    }
+    const filter = ui.adminResourceFilter;
+    const filterOptions = `<option value="">All developers</option>` +
+      state.developers.map(d => `<option value="${d.id}" ${filter===d.id?'selected':''}>${escapeHTML(d.name)}</option>`).join('');
+
+    let body = '';
+    if (ui.adminTab === 'dashboard') body = renderDashboard(filter || undefined);
+    else if (ui.adminTab === 'utilization') body = renderTeam(filter || undefined);
+    else if (ui.adminTab === 'timesheet'){
+      const logs = state.timeLogs.filter(l => !filter || l.devId === filter);
+      const total = logs.reduce((s,l) => s + Number(l.hours||0), 0);
+      body = `<div class="panel"><div class="panel__head"><h3>Team timesheet</h3><span class="hint">${total}h total</span></div>${renderTimesheetList(logs)}</div>`;
+    }
+    else if (ui.adminTab === 'tickets') body = renderTickets();
+    else if (ui.adminTab === 'settings') body = renderAdminSettings();
+
+    return `
+      <div class="table-toolbar" style="justify-content:space-between;margin-bottom:18px">
+        <div class="period-tabs" id="adminTabs">
+          ${ADMIN_TABS.map(t => `<button type="button" class="period-tab${t.id===ui.adminTab?' is-active':''}" data-admin-tab="${t.id}">${t.label}</button>`).join('')}
+        </div>
+        ${ui.adminTab !== 'settings' && ui.adminTab !== 'tickets' ? `<select class="select-chip" id="adminResourceFilter">${filterOptions}</select>` : ''}
+      </div>
+      ${body}
+    `;
+  }
+
+  function renderAdminSettings(){
+    const s = state.settings;
+    return `
+      <div class="panel" style="max-width:520px">
+        <div class="panel__head">
+          <h3>Workspace settings</h3>
+          <span class="hint">Shared across the whole team</span>
+        </div>
+        <form id="adminSettingsForm">
+          <div class="field">
+            <label for="s_standup">Standup time</label>
+            <input type="time" id="s_standup" value="${s.standupTime}">
+          </div>
+          <div class="field">
+            <label for="s_eod">EOD plan due</label>
+            <input type="time" id="s_eod" value="${s.eodTime}">
+          </div>
+          <div class="field">
+            <label for="s_notify">Log-time reminder notification</label>
+            <input type="time" id="s_notify" value="${s.notifyTime}">
+            <p class="field__hint">Shows a browser notification at this time if you haven't logged any hours yet today. Requires the app to be open (or installed) and notification permission granted — it can't wake a fully closed browser.</p>
+          </div>
+          <button type="submit" class="btn btn--primary">Save settings</button>
+        </form>
       </div>
     `;
   }
@@ -1215,18 +1298,91 @@
     render();
   });
 
+  /* ---------------- Identity ("who's logging in") ---------------- */
+  const identityModalOverlay = document.getElementById('identityModalOverlay');
+  const identityForm = document.getElementById('identityForm');
+
+  function openIdentityModal(allowClose){
+    const sel = document.getElementById('i_dev');
+    sel.innerHTML = state.developers.map(d => `<option value="${d.id}">${escapeHTML(d.name)} — ${escapeHTML(d.role)}</option>`).join('');
+    const existing = currentUser();
+    if (existing) sel.value = existing.id;
+    document.getElementById('closeIdentityModalBtn').hidden = !allowClose;
+    identityModalOverlay.hidden = false;
+  }
+  function closeIdentityModal(){ identityModalOverlay.hidden = true; }
+
+  document.getElementById('closeIdentityModalBtn').addEventListener('click', closeIdentityModal);
+  document.getElementById('identityWidget').addEventListener('click', () => openIdentityModal(true));
+
+  identityForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const devId = document.getElementById('i_dev').value;
+    if (!devId) return;
+    localStorage.setItem(IDENTITY_KEY, devId);
+    closeIdentityModal();
+    const dev = devById(devId);
+    toast(`Logged in as ${dev.name}`);
+    setView(ui.view);
+  });
+
+  /* ---------------- Theme ---------------- */
+  const THEME_KEY = 'pulse_theme';
+  function applyTheme(theme){
+    document.documentElement.setAttribute('data-theme', theme);
+    document.getElementById('themeToggleText').textContent = theme === 'light' ? 'Light theme' : 'Dark theme';
+    localStorage.setItem(THEME_KEY, theme);
+  }
+  document.getElementById('themeToggleBtn').addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme') === 'light' ? 'light' : 'dark';
+    applyTheme(current === 'light' ? 'dark' : 'light');
+  });
+  applyTheme(localStorage.getItem(THEME_KEY) === 'light' ? 'light' : 'dark');
+
+  /* ---------------- Team member modal ---------------- */
+  const memberModalOverlay = document.getElementById('memberModalOverlay');
+  const memberForm = document.getElementById('memberForm');
+
+  function openTeamMemberModal(){
+    memberForm.reset();
+    memberModalOverlay.hidden = false;
+    document.getElementById('m_name').focus();
+  }
+  function closeMemberModal(){ memberModalOverlay.hidden = true; memberForm.reset(); }
+
+  document.getElementById('closeMemberModalBtn').addEventListener('click', closeMemberModal);
+  document.getElementById('cancelMemberModalBtn').addEventListener('click', closeMemberModal);
+  memberModalOverlay.addEventListener('click', (e) => { if (e.target === memberModalOverlay) closeMemberModal(); });
+
+  memberForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const name = document.getElementById('m_name').value.trim();
+    const role = document.getElementById('m_role').value.trim();
+    const isAdmin = document.getElementById('m_isAdmin').checked;
+    if (!name || !role) return;
+    state.developers.push({
+      id: uid('dev'), name, role, isAdmin,
+      color: AVATAR_COLORS[state.developers.length % AVATAR_COLORS.length],
+    });
+    saveState();
+    closeMemberModal();
+    toast(`${name} added to the team`);
+    render();
+  });
+
   /* ---------------- Time log modal ---------------- */
   const logModalOverlay = document.getElementById('logModalOverlay');
   const logForm = document.getElementById('logForm');
 
   function openLogModal(){
-    document.getElementById('l_dev').innerHTML = state.developers.map(d => `<option value="${d.id}">${escapeHTML(d.name)}</option>`).join('');
+    const me = currentUser();
+    if (!me){ toast('Choose who you are first'); return; }
+    document.getElementById('logForDisplay').textContent = `Logging time as ${me.name}`;
     document.getElementById('l_ticket').innerHTML = `<option value="">— No ticket —</option>` +
       state.tickets.map(t => `<option value="${t.id}">${escapeHTML(t.ticketNumber)} — ${escapeHTML(t.title)}</option>`).join('');
     document.getElementById('l_date').value = todayISO();
     document.getElementById('l_hours').value = '';
     document.getElementById('l_note').value = '';
-    if (ui.timesheetDev) document.getElementById('l_dev').value = ui.timesheetDev;
     logModalOverlay.hidden = false;
   }
   function closeLogModal(){ logModalOverlay.hidden = true; logForm.reset(); }
@@ -1237,11 +1393,13 @@
 
   logForm.addEventListener('submit', (e) => {
     e.preventDefault();
+    const me = currentUser();
+    if (!me) return;
     state.timeLogs.push({
       id: uid('l'),
-      devId: document.getElementById('l_dev').value,
+      devId: me.id,
       date: document.getElementById('l_date').value,
-      session: document.getElementById('l_session').value,
+      session: new Date().getHours() < 13 ? 'AM' : 'PM', // auto-detected from time of day logged
       hours: parseFloat(document.getElementById('l_hours').value) || 0,
       ticketId: document.getElementById('l_ticket').value || null,
       note: document.getElementById('l_note').value.trim(),
@@ -1274,7 +1432,8 @@
 
   function buildResourceReportCSV(){
     const rows = [];
-    const perDev = state.developers.map(d => ({ dev: d, a: devAnalytics(d) }));
+    const period = REPORT_PERIODS.find(p => p.id === ui.reportPeriod) || REPORT_PERIODS[1];
+    const perDev = state.developers.map(d => ({ dev: d, a: devAnalytics(d, period.days) }));
 
     const totalEstimate = perDev.reduce((s,x) => s + x.a.estimateTotal, 0);
     const totalLogged = perDev.reduce((s,x) => s + x.a.loggedTotal, 0);
@@ -1286,13 +1445,14 @@
 
     rows.push(csvRow(['Pulse — Resource Utilization & Performance Report']));
     rows.push(csvRow(['Generated', new Date().toLocaleString()]));
+    rows.push(csvRow(['Period', period.label]));
     rows.push('');
     rows.push(csvRow(['Team Summary']));
     rows.push(csvRow(['Metric', 'Value']));
     rows.push(csvRow(['Developers', state.developers.length]));
     rows.push(csvRow(['Total tickets', state.tickets.length]));
     rows.push(csvRow(['Total estimated hours', totalEstimate]));
-    rows.push(csvRow(['Total utilized hours', totalLogged]));
+    rows.push(csvRow([`Total utilized hours (${period.label.toLowerCase()})`, totalLogged]));
     rows.push(csvRow(['Total remaining hours', totalRemaining]));
     rows.push(csvRow(['Overall utilization %', overallUtilization + '%']));
     rows.push(csvRow(['Ahead', aheadCount]));
@@ -1301,18 +1461,17 @@
     rows.push('');
     rows.push(csvRow(['Resource-wise Report']));
     rows.push(csvRow([
-      'Developer', 'Role', 'Stories', 'Tasks', 'Bugs', 'Change Requests', 'Enhancements',
-      'Total Tickets', 'Story Points Done/Total', 'Estimated Hrs', 'Utilized Hrs', 'Remaining Hrs',
-      'Utilization %', 'Hours This Week', 'Pace'
+      'Developer', 'Role', 'Admin', 'Stories', 'Tasks', 'Bugs', 'Enhancements',
+      'Total Tickets', 'Story Points Done/Total', 'Estimated Hrs', `Utilized Hrs (${period.label})`, 'Remaining Hrs',
+      'Utilization %', 'Pace'
     ]));
     perDev.forEach(({ dev, a }) => {
-      const weekHours = state.timeLogs.filter(l => l.devId === dev.id && withinLastNDays(l.date, 7)).reduce((s,l) => s + Number(l.hours||0), 0);
       const pointsTotal = a.myTickets.reduce((s,t) => s + Number(t.storyPoints||0), 0);
       const pointsDone = a.myTickets.filter(t => t.status === 'done').reduce((s,t) => s + Number(t.storyPoints||0), 0);
       rows.push(csvRow([
-        dev.name, dev.role, a.stories, a.tasks, a.bugs, a.changeRequests, a.enhancements,
+        dev.name, dev.role, dev.isAdmin ? 'Yes' : 'No', a.stories, a.tasks, a.bugs, a.enhancements,
         a.myTickets.length, `${pointsDone}/${pointsTotal}`, a.estimateTotal, a.loggedTotal, a.remaining,
-        a.utilizationPct + '%', weekHours, RAG_LABEL[a.status]
+        a.utilizationPct + '%', RAG_LABEL[a.status]
       ]));
     });
 
@@ -1338,8 +1497,13 @@
     });
 
     document.querySelectorAll('.board-col__body').forEach(col => {
-      col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('is-dragover'); });
-      col.addEventListener('dragleave', () => col.classList.remove('is-dragover'));
+      col.addEventListener('dragover', (e) => e.preventDefault());
+      col.addEventListener('dragenter', (e) => { e.preventDefault(); col.classList.add('is-dragover'); });
+      col.addEventListener('dragleave', (e) => {
+        // Only clear the highlight when actually leaving the column, not when
+        // moving between child cards inside it (avoids visual flicker).
+        if (!col.contains(e.relatedTarget)) col.classList.remove('is-dragover');
+      });
       col.addEventListener('drop', (e) => {
         e.preventDefault();
         col.classList.remove('is-dragover');
@@ -1347,6 +1511,20 @@
         const t = ticketById(id);
         if (!t) return;
         const newStatus = col.dataset.status;
+
+        if (newStatus === 'done'){
+          const sp = subtasksProgress(t);
+          const logged = actualHours(t.id);
+          const missing = [];
+          if (sp.total && sp.done < sp.total) missing.push(`finish the checklist (${sp.done}/${sp.total})`);
+          if (logged <= 0) missing.push('log some hours');
+          if (missing.length){
+            toast(`Before marking done: ${missing.join(' and ')}.`);
+            openTicketModal(t);
+            return;
+          }
+        }
+
         if (newStatus !== 'blocked' && unmetDeps(t).length > 0){
           toast(`Still waiting on ${unmetDeps(t).map(d=>d.ticketNumber).join(', ')}`);
         }
@@ -1361,6 +1539,21 @@
       row.addEventListener('click', () => openTicketModal(ticketById(row.dataset.id)));
     });
 
+    document.querySelectorAll('[data-status-select]').forEach(sel => {
+      sel.className = 'status-inline-select badge--status-' + sel.value;
+      sel.addEventListener('click', (e) => e.stopPropagation());
+      sel.addEventListener('change', (e) => {
+        e.stopPropagation();
+        const t = ticketById(sel.dataset.statusSelect);
+        if (!t) return;
+        t.status = sel.value;
+        t.updatedAt = todayISO();
+        saveState();
+        toast('Status updated');
+        render();
+      });
+    });
+
     const boardFilter = document.getElementById('boardAssigneeFilter');
     if (boardFilter) boardFilter.addEventListener('change', (e) => { ui.boardAssigneeFilter = e.target.value; render(); });
 
@@ -1370,9 +1563,6 @@
     if (fType) fType.addEventListener('change', (e) => { ui.tableFilters.type = e.target.value; render(); });
     if (fStatus) fStatus.addEventListener('change', (e) => { ui.tableFilters.status = e.target.value; render(); });
     if (fAssignee) fAssignee.addEventListener('change', (e) => { ui.tableFilters.assignee = e.target.value; render(); });
-
-    const tsDevFilter = document.getElementById('timesheetDevFilter');
-    if (tsDevFilter) tsDevFilter.addEventListener('change', (e) => { ui.timesheetDev = e.target.value; render(); });
 
     const logTimeBtn = document.getElementById('logTimeBtn');
     if (logTimeBtn) logTimeBtn.addEventListener('click', openLogModal);
@@ -1388,8 +1578,58 @@
     });
 
     document.querySelectorAll('.dep-node').forEach(node => {
-      node.addEventListener('click', () => openTicketModal(ticketById(node.dataset.id)));
-      node.style.cursor = 'pointer';
+      node.addEventListener('click', () => {
+        if (node.getAttribute('data-dragging') === '1') return;
+        openTicketModal(ticketById(node.dataset.id));
+      });
+
+      node.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', node.dataset.id);
+        node.setAttribute('data-dragging', '1');
+        setTimeout(() => node.classList.add('is-dragging'), 0);
+      });
+      node.addEventListener('dragend', () => {
+        node.removeAttribute('data-dragging');
+        node.classList.remove('is-dragging');
+      });
+      node.addEventListener('dragover', (e) => e.preventDefault());
+      node.addEventListener('dragenter', (e) => { e.preventDefault(); node.classList.add('is-dragover'); });
+      node.addEventListener('dragleave', (e) => {
+        if (!node.contains(e.relatedTarget)) node.classList.remove('is-dragover');
+      });
+      node.addEventListener('drop', (e) => {
+        e.preventDefault();
+        node.classList.remove('is-dragover');
+        const draggedId = e.dataTransfer.getData('text/plain');
+        const targetId = node.dataset.id;
+        if (!draggedId || draggedId === targetId) return;
+        const dragged = ticketById(draggedId);
+        const target = ticketById(targetId);
+        if (!dragged || !target) return;
+
+        dragged.dependsOn = dragged.dependsOn || [];
+        if (dragged.dependsOn.includes(targetId)){
+          toast(`${dragged.ticketNumber} already depends on ${target.ticketNumber}`);
+          return;
+        }
+        // Cycle guard: reject if target already (transitively) depends on the dragged ticket.
+        const wouldCycle = (id, seen = new Set()) => {
+          if (id === draggedId) return true;
+          if (seen.has(id)) return false;
+          seen.add(id);
+          const tt = ticketById(id);
+          return (tt && tt.dependsOn || []).some(depId => wouldCycle(depId, seen));
+        };
+        if (wouldCycle(targetId)){
+          toast('That would create a circular dependency');
+          return;
+        }
+        dragged.dependsOn.push(targetId);
+        dragged.updatedAt = todayISO();
+        saveState();
+        toast(`${dragged.ticketNumber} now depends on ${target.ticketNumber}`);
+        render();
+      });
     });
 
     document.querySelectorAll('.epic-card').forEach(card => {
@@ -1406,6 +1646,29 @@
 
     const printReportBtn = document.getElementById('printReportBtn');
     if (printReportBtn) printReportBtn.addEventListener('click', () => window.print());
+
+    document.querySelectorAll('.period-tab[data-period]').forEach(btn => {
+      btn.addEventListener('click', () => { ui.reportPeriod = btn.dataset.period; render(); });
+    });
+    document.querySelectorAll('.period-tab[data-admin-tab]').forEach(btn => {
+      btn.addEventListener('click', () => { ui.adminTab = btn.dataset.adminTab; render(); });
+    });
+    const addTeamMemberBtn = document.getElementById('addTeamMemberBtn');
+    if (addTeamMemberBtn) addTeamMemberBtn.addEventListener('click', openTeamMemberModal);
+
+    const adminResourceFilter = document.getElementById('adminResourceFilter');
+    if (adminResourceFilter) adminResourceFilter.addEventListener('change', (e) => { ui.adminResourceFilter = e.target.value; render(); });
+
+    const adminSettingsForm = document.getElementById('adminSettingsForm');
+    if (adminSettingsForm) adminSettingsForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      state.settings.standupTime = document.getElementById('s_standup').value || state.settings.standupTime;
+      state.settings.eodTime = document.getElementById('s_eod').value || state.settings.eodTime;
+      state.settings.notifyTime = document.getElementById('s_notify').value || state.settings.notifyTime;
+      saveState();
+      toast('Settings saved for the whole team');
+      if (ui.view === 'dashboard') setView('dashboard');
+    });
   }
 
   /* ---------------- Global nav + search ---------------- */
@@ -1448,6 +1711,37 @@
     });
   }
 
+  /* ---------------- Log-time reminder notification (best-effort) ---------------- */
+  // Fires a browser notification once per day at state.settings.notifyTime if the
+  // current user hasn't logged any hours yet today. Only works while this tab/app
+  // is open (or backgrounded, depending on the browser) — a guaranteed alert even
+  // when the app is fully closed would need a server-side push (e.g. FCM), which
+  // is a separate, bigger addition.
+  function startReminderScheduler(){
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'default'){
+      // Ask once, quietly — don't block boot on the result.
+      Notification.requestPermission().catch(() => {});
+    }
+    setInterval(() => {
+      if (Notification.permission !== 'granted') return;
+      const me = currentUser();
+      if (!me) return;
+      const now = new Date();
+      const hhmm = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+      if (hhmm !== state.settings.notifyTime) return;
+      const flagKey = `pulse_notified_${todayISO()}_${me.id}`;
+      if (localStorage.getItem(flagKey)) return;
+      const loggedToday = state.timeLogs.some(l => l.devId === me.id && l.date === todayISO());
+      if (loggedToday) return;
+      new Notification('Pulse — log your time', {
+        body: `Hey ${me.name}, you haven't logged any hours today yet.`,
+        icon: 'icons/icon-192.png',
+      });
+      localStorage.setItem(flagKey, '1');
+    }, 30000); // check every 30s; cheap and keeps the minute match simple
+  }
+
   /* ---------------- Boot ---------------- */
   function setSyncStatus(mode, text){
     const el = document.getElementById('syncStatus');
@@ -1481,7 +1775,13 @@
       setSyncStatus('local', 'Local only — not shared');
     }
     saveState();
-    setView('dashboard');
+
+    if (!currentUser()){
+      openIdentityModal(false);
+    } else {
+      setView('dashboard');
+    }
+    startReminderScheduler();
 
     // Zero-setup way to test "shared board" behavior: any other tab open on
     // this same origin picks up localStorage changes instantly, no Firebase
