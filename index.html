@@ -23,9 +23,8 @@
     <div class="rail__brand">
       <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
         <rect width="28" height="28" rx="7" fill="#0F1319"/>
-        <path d="M9 6.5 L6 14 L9 21.5" stroke="#FF8A3D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <path d="M19 6.5 L22 14 L19 21.5" stroke="#34D1BF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        <circle cx="14" cy="14" r="1.8" fill="#E7EAEE"/>
+        <path d="M3 15 H8 L10.5 7 L13 21 L15.5 15 H25" stroke="#FF8A3D" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M11.75 14 L13 21 L15.5 15 H25" stroke="#34D1BF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
       <span class="rail__brand-text">Pulse</span>
     </div>
@@ -59,9 +58,24 @@
         <svg viewBox="0 0 20 20" fill="none"><circle cx="7" cy="6.5" r="2.4" stroke="currentColor" stroke-width="1.6"/><path d="M2.5 16c0-2.8 2-4.5 4.5-4.5s4.5 1.7 4.5 4.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="14.5" cy="7" r="1.9" stroke="currentColor" stroke-width="1.5"/><path d="M12.7 11.8c1.9.2 3.3 1.7 3.3 4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
         <span>Team</span>
       </button>
+      <button class="rail__link" data-view="admin" id="adminNavLink" hidden>
+        <svg viewBox="0 0 20 20" fill="none"><path d="M10 2.5 16.5 5v4.5c0 4-2.8 6.7-6.5 8-3.7-1.3-6.5-4-6.5-8V5L10 2.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M7.3 10 9 11.7 12.7 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Admin</span>
+      </button>
     </nav>
 
     <div class="rail__footer">
+      <button class="identity-widget" id="identityWidget">
+        <span class="avatar" id="identityAvatar">?</span>
+        <span class="identity-widget__text">
+          <span class="identity-widget__name" id="identityName">Choose who you are</span>
+          <span class="identity-widget__switch">Switch</span>
+        </span>
+      </button>
+      <button class="rail__link" id="themeToggleBtn">
+        <svg viewBox="0 0 20 20" fill="none" id="themeIconMoon"><path d="M16.5 12.3A6.7 6.7 0 0 1 7.7 3.5a6.7 6.7 0 1 0 8.8 8.8Z" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        <span id="themeToggleText">Dark theme</span>
+      </button>
       <div class="sync-status" id="syncStatus">
         <span class="sync-status__dot"></span>
         <span id="syncStatusText">Checking sync…</span>
@@ -82,7 +96,7 @@
         <p id="viewSubtitle" class="topbar__subtitle">Standup at 09:00 · EOD plan due 18:00</p>
       </div>
       <div class="topbar__actions">
-        <div class="search">
+        <div class="search" id="searchWrap">
           <svg viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.6"/><path d="M16 16l-3.2-3.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
           <input type="text" id="searchInput" placeholder="Search tickets, e.g. CCS-123">
         </div>
@@ -96,6 +110,30 @@
     <main class="view" id="view">
       <!-- Views injected by app.js -->
     </main>
+  </div>
+</div>
+
+<!-- Identity modal -->
+<div class="modal-overlay" id="identityModalOverlay" hidden>
+  <div class="modal modal--sm" role="dialog" aria-modal="true">
+    <div class="modal__header">
+      <h2>Who's logging in?</h2>
+      <button class="icon-btn" id="closeIdentityModalBtn" aria-label="Close" hidden>
+        <svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <form id="identityForm" class="modal__body">
+      <div class="field">
+        <label for="i_dev">Your name</label>
+        <select id="i_dev"></select>
+        <p class="field__hint">This is remembered on this device — your Dashboard, Timesheet and ticket updates are scoped to you. Admins additionally get a team-wide Admin view.</p>
+      </div>
+      <div class="modal__footer">
+        <div class="modal__footer-right">
+          <button type="submit" class="btn btn--primary">Continue</button>
+        </div>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -121,12 +159,11 @@
             <option value="story">Story</option>
             <option value="task">Task</option>
             <option value="bug">Bug</option>
-            <option value="change-request">Change Request</option>
             <option value="enhancement">Enhancement</option>
           </select>
         </div>
       </div>
-      <p class="field__hint" style="margin-top:-10px;margin-bottom:14px">Bug = broken vs. spec. Change Request = spec itself changed. Enhancement = smaller improvement to something that already works.</p>
+      <p class="field__hint" style="margin-top:-10px;margin-bottom:14px">Bug = broken vs. spec. Enhancement = smaller improvement to something that already works.</p>
 
       <div class="field">
         <label for="f_title">Title</label>
@@ -153,10 +190,9 @@
         <div class="field">
           <label for="f_status">Status</label>
           <select id="f_status">
-            <option value="backlog" data-label-default="Backlog" data-label-bug="Open">Backlog</option>
-            <option value="in-progress" data-label-default="In progress" data-label-bug="In Progress">In progress</option>
             <option value="blocked" data-label-default="Blocked" data-label-bug="Blocked">Blocked</option>
-            <option value="review" data-label-default="In review" data-label-bug="Resolved">In review</option>
+            <option value="backlog" data-label-default="Ready to start" data-label-bug="Open">Ready to start</option>
+            <option value="in-progress" data-label-default="In progress" data-label-bug="In Progress">In progress</option>
             <option value="done" data-label-default="Done" data-label-bug="Closed">Done</option>
           </select>
         </div>
@@ -167,7 +203,7 @@
           </select>
         </div>
       </div>
-      <p class="field__hint" id="statusHint" style="margin-top:-10px;margin-bottom:14px" hidden>For bugs this reads as the standard defect lifecycle: Open → In Progress → Resolved → Closed (Blocked still applies if it's waiting on a dependency).</p>
+      <p class="field__hint" id="statusHint" style="margin-top:-10px;margin-bottom:14px" hidden>For bugs this reads as the standard defect lifecycle: Open → In Progress → Closed (Blocked still applies if it's waiting on a dependency).</p>
 
       <div class="field">
         <label>Effort estimation</label>
@@ -306,6 +342,40 @@
   </div>
 </div>
 
+<!-- Team member modal -->
+<div class="modal-overlay" id="memberModalOverlay" hidden>
+  <div class="modal modal--sm" role="dialog" aria-modal="true">
+    <div class="modal__header">
+      <h2>Add team member</h2>
+      <button class="icon-btn" id="closeMemberModalBtn" aria-label="Close">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+    <form id="memberForm" class="modal__body">
+      <div class="field">
+        <label for="m_name">Name</label>
+        <input type="text" id="m_name" placeholder="e.g. Priya" required>
+      </div>
+      <div class="field">
+        <label for="m_role">Role</label>
+        <input type="text" id="m_role" placeholder="e.g. Backend Developer" required>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="m_isAdmin" style="width:auto">
+          <span>Admin (can see team-wide activity and change workspace settings)</span>
+        </label>
+      </div>
+      <div class="modal__footer">
+        <div class="modal__footer-right">
+          <button type="button" class="btn btn--ghost" id="cancelMemberModalBtn">Cancel</button>
+          <button type="submit" class="btn btn--primary">Add member</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- Time log modal -->
 <div class="modal-overlay" id="logModalOverlay" hidden>
   <div class="modal modal--sm" role="dialog" aria-modal="true">
@@ -316,23 +386,11 @@
       </button>
     </div>
     <form id="logForm" class="modal__body">
+      <p class="field__hint" id="logForDisplay" style="margin-top:0;margin-bottom:14px"></p>
       <div class="form-row">
-        <div class="field">
-          <label for="l_dev">Developer</label>
-          <select id="l_dev" required></select>
-        </div>
         <div class="field">
           <label for="l_date">Date</label>
           <input type="date" id="l_date" required>
-        </div>
-      </div>
-      <div class="form-row">
-        <div class="field">
-          <label for="l_session">Session</label>
-          <select id="l_session">
-            <option value="AM">Morning</option>
-            <option value="PM">Evening</option>
-          </select>
         </div>
         <div class="field">
           <label for="l_hours">Hours</label>
