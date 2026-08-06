@@ -5,23 +5,20 @@
    the app falls back to local-only (per-browser) storage.
    ============================================================ */
 
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js';
+import { enabled as firebaseEnabled, app } from './firebase-init.js';
 import {
   getFirestore, doc, getDoc, setDoc, onSnapshot,
 } from 'https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js';
 
-const cfg = window.FIREBASE_CONFIG || {};
 const boardId = window.PULSE_BOARD_ID || 'default-board';
-const enabled = Boolean(cfg.apiKey && cfg.projectId);
 
 let db = null;
 let docRef = null;
 let pushTimer = null;
 let lastPushedJSON = null;
 
-if (enabled){
+if (firebaseEnabled){
   try{
-    const app = initializeApp(cfg);
     db = getFirestore(app);
     docRef = doc(db, 'pulse_boards', boardId);
   }catch(err){

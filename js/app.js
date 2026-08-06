@@ -94,11 +94,11 @@
 
   function seedState(){
     const devs = [
-      { id: 'dev_mohan',     name: 'Mohan',     role: 'Backend Developer',  color: AVATAR_COLORS[0] },
-      { id: 'dev_hammed',    name: 'Hammed',    role: 'Full-stack Developer', color: AVATAR_COLORS[1] },
-      { id: 'dev_arul',      name: 'Arul',      role: 'Frontend Developer', color: AVATAR_COLORS[2] },
-      { id: 'dev_rajeshari', name: 'Rajeshari', role: 'QA Engineer',        color: AVATAR_COLORS[3] },
-      { id: 'dev_naveen',    name: 'Naveen',    role: 'Tech Lead',          color: AVATAR_COLORS[4], isAdmin: true },
+      { id: 'dev_mohan',     name: 'Mohan',     role: 'Backend Developer',  color: AVATAR_COLORS[0], email: 'mohan@example.com' },
+      { id: 'dev_hammed',    name: 'Hammed',    role: 'Full-stack Developer', color: AVATAR_COLORS[1], email: 'hammed@example.com' },
+      { id: 'dev_arul',      name: 'Arul',      role: 'Frontend Developer', color: AVATAR_COLORS[2], email: 'arul@example.com' },
+      { id: 'dev_rajeshari', name: 'Rajeshari', role: 'QA Engineer',        color: AVATAR_COLORS[3], email: 'rajeshari@example.com' },
+      { id: 'dev_naveen',    name: 'Naveen',    role: 'Tech Lead',          color: AVATAR_COLORS[4], isAdmin: true, email: 'naveen@example.com' },
     ];
 
     const epics = [
@@ -279,13 +279,17 @@
     const u = currentUser();
     document.getElementById('identityName').textContent = u ? u.name : 'Choose who you are';
     const avatarEl = document.getElementById('identityAvatar');
-    if (u){
+    if (u && u.photoURL){
+      avatarEl.textContent = '';
+      avatarEl.style.background = `#2A3140 url(${u.photoURL}) center/cover no-repeat`;
+    } else if (u){
       avatarEl.textContent = initials(u.name);
       avatarEl.style.background = u.color;
     } else {
       avatarEl.textContent = '?';
       avatarEl.style.background = '#2A3140';
     }
+    document.querySelector('.identity-widget__switch').textContent = usingGoogleAuth ? 'Sign out' : 'Switch';
     document.getElementById('adminNavLink').hidden = !isCurrentUserAdmin();
   }
 
@@ -1301,6 +1305,24 @@
   /* ---------------- Identity ("who's logging in") ---------------- */
   const identityModalOverlay = document.getElementById('identityModalOverlay');
   const identityForm = document.getElementById('identityForm');
+  let usingGoogleAuth = false; // true once someone has signed in with Google this session
+
+  function resolveDevByEmail(email, name, photoURL){
+    let dev = state.developers.find(d => d.email && d.email.toLowerCase() === email.toLowerCase());
+    if (!dev){
+      dev = {
+        id: uid('dev'), name: name || email.split('@')[0], role: 'Team member',
+        email, photoURL: photoURL || null, isAdmin: false,
+        color: AVATAR_COLORS[state.developers.length % AVATAR_COLORS.length],
+      };
+      state.developers.push(dev);
+      toast(`Welcome, ${dev.name} — added you to the team`);
+    } else if (photoURL && dev.photoURL !== photoURL){
+      dev.photoURL = photoURL;
+    }
+    saveState();
+    return dev;
+  }
 
   function openIdentityModal(allowClose){
     const sel = document.getElementById('i_dev');
@@ -1308,18 +1330,50 @@
     const existing = currentUser();
     if (existing) sel.value = existing.id;
     document.getElementById('closeIdentityModalBtn').hidden = !allowClose;
+
+    const googleReady = window.PulseAuth && window.PulseAuth.enabled;
+    document.getElementById('googleSignInBtn').hidden = !googleReady;
+    document.getElementById('identityDivider').hidden = !googleReady;
+    document.getElementById('googleUnavailableHint').hidden = googleReady;
+
     identityModalOverlay.hidden = false;
   }
   function closeIdentityModal(){ identityModalOverlay.hidden = true; }
 
   document.getElementById('closeIdentityModalBtn').addEventListener('click', closeIdentityModal);
-  document.getElementById('identityWidget').addEventListener('click', () => openIdentityModal(true));
+  document.getElementById('identityWidget').addEventListener('click', () => {
+    if (usingGoogleAuth && window.PulseAuth){
+      window.PulseAuth.signOutUser().finally(() => {
+        localStorage.removeItem(IDENTITY_KEY);
+        usingGoogleAuth = false;
+        openIdentityModal(true);
+      });
+    } else {
+      openIdentityModal(true);
+    }
+  });
+
+  document.getElementById('googleSignInBtn').addEventListener('click', async () => {
+    try{
+      const g = await window.PulseAuth.signInWithGoogle();
+      const dev = resolveDevByEmail(g.email, g.name, g.photoURL);
+      localStorage.setItem(IDENTITY_KEY, dev.id);
+      usingGoogleAuth = true;
+      closeIdentityModal();
+      toast(`Signed in as ${dev.name}`);
+      setView(ui.view);
+    }catch(err){
+      console.error(err);
+      toast('Google sign-in failed — try again or use a device profile below');
+    }
+  });
 
   identityForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const devId = document.getElementById('i_dev').value;
     if (!devId) return;
     localStorage.setItem(IDENTITY_KEY, devId);
+    usingGoogleAuth = false;
     closeIdentityModal();
     const dev = devById(devId);
     toast(`Logged in as ${dev.name}`);
@@ -1358,10 +1412,11 @@
     e.preventDefault();
     const name = document.getElementById('m_name').value.trim();
     const role = document.getElementById('m_role').value.trim();
+    const email = document.getElementById('m_email').value.trim();
     const isAdmin = document.getElementById('m_isAdmin').checked;
     if (!name || !role) return;
     state.developers.push({
-      id: uid('dev'), name, role, isAdmin,
+      id: uid('dev'), name, role, isAdmin, email: email || null, photoURL: null,
       color: AVATAR_COLORS[state.developers.length % AVATAR_COLORS.length],
     });
     saveState();
@@ -1775,6 +1830,21 @@
       setSyncStatus('local', 'Local only — not shared');
     }
     saveState();
+
+    // If already signed in with Google from a previous visit, resolve identity
+    // automatically instead of asking again.
+    if (window.PulseAuth && window.PulseAuth.enabled){
+      try{
+        const googleUser = await new Promise((resolve) => {
+          const unsub = window.PulseAuth.onAuthChange((u) => { unsub(); resolve(u); });
+        });
+        if (googleUser){
+          const dev = resolveDevByEmail(googleUser.email, googleUser.name, googleUser.photoURL);
+          localStorage.setItem(IDENTITY_KEY, dev.id);
+          usingGoogleAuth = true;
+        }
+      }catch(err){ console.error('Pulse: Google auth check failed.', err); }
+    }
 
     if (!currentUser()){
       openIdentityModal(false);
