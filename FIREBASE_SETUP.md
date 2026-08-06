@@ -42,33 +42,63 @@ That's it on the code side — the app auto-detects this and switches from
 local-only to live shared mode (you'll see "Synced — shared board" at the
 bottom of the left sidebar).
 
-## 3. Lock down Firestore security rules
+## 3. Turn on Google Sign-In
+
+1. Firebase console → **Build → Authentication → Get started**.
+2. **Sign-in method** tab → click **Google** → toggle **Enable** → pick a
+   support email → **Save**.
+3. Still in Authentication → **Settings → Authorized domains** → **Add
+   domain** → add whatever domain you'll actually open the app from
+   (e.g. `your-project.web.app` for Firebase Hosting, or
+   `yourname.github.io` for GitHub Pages). `localhost` is already allowed
+   by default, which is why sign-in works during local testing.
+
+That's it on the Firebase side — no code changes needed. Once your
+`firebase-config.js` has real values, the "Sign in with Google" button
+appears automatically on the login screen instead of the fallback name
+picker.
+
+**How people get matched to a name:** if a developer's `email` field
+(set from **Team → Add team member**, or edited directly in Firestore)
+matches the Google account's email, they're recognized as that person.
+If nobody matches, Pulse automatically creates a new (non-admin) profile
+for them using their Google name — an existing admin can promote them to
+admin afterwards from the Resource Utilization table.
+
+## 4. Lock down Firestore security rules
 
 In Firebase console → **Firestore Database → Rules**, replace the default
 with this — it only allows access to Pulse's own data, nothing else in
-your project:
+your project, and (once step 3 is done) requires a signed-in Google
+account:
 
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     match /pulse_boards/{boardId} {
-      allow read, write: if true;
+      allow read, write: if request.auth != null;
     }
   }
 }
 ```
 
-**Note:** this has no login check — anyone who has the app's URL and config
-can read/write the board. That's fine for an internal tool behind a
-private URL, but if you want it locked to your company's accounts, say the
-word and I'll wire up Firebase Authentication (e.g. restricted to your
-company's email domain) — the rule would then become
-`allow read, write: if request.auth.token.email.matches('.*@yourcompany[.]com$');`.
+Want it locked to just your company's accounts rather than any Google
+account? Use this instead, swapping in your real domain:
+
+```
+allow read, write: if request.auth != null
+  && request.auth.token.email.matches('.*@yourcompany[.]com$');
+```
+
+**If you skip Google Sign-In entirely:** the app still works fine with
+the device-only name picker — just use the original open rule
+(`allow read, write: if true;`) since there's no `request.auth` to check
+against in that case.
 
 ---
 
-## 4. Get a URL your team can open (including from SharePoint)
+## 5. Get a URL your team can open (including from SharePoint)
 
 SharePoint document libraries won't execute custom HTML/JS apps directly —
 uploaded `.html` files get sanitized rather than run. So the app needs to

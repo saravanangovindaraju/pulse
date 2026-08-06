@@ -1,10 +1,12 @@
-const CACHE = 'pulse-v2';
+const CACHE = 'pulse-v3';
 const ASSETS = [
   './',
   './index.html',
   './css/styles.css',
   './js/app.js',
   './js/firebase-config.js',
+  './js/firebase-init.js',
+  './js/firebase-auth.js',
   './js/firebase-sync.js',
   './manifest.json',
   './icons/icon-192.png',
