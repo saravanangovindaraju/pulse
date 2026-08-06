@@ -161,6 +161,21 @@ a{ color: inherit; }
 .rail__link.is-active{ background: var(--surface-raised); color: var(--text); box-shadow: inset 2px 0 0 var(--amber); }
 .rail__footer{ padding-top: 12px; border-top: 1px solid var(--border-soft); display: flex; flex-direction: column; gap: 2px; }
 
+.google-btn{
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  width: 100%; padding: 10px 16px; margin-bottom: 16px;
+  background: #fff; border: 1px solid #DADCE0; border-radius: var(--radius-sm);
+  color: #3C4043; font-size: 13.5px; font-weight: 600;
+}
+.google-btn:hover{ box-shadow: 0 1px 3px rgba(0,0,0,0.25); }
+.identity-divider{
+  display: flex; align-items: center; gap: 10px; margin: 0 0 16px;
+  color: var(--text-faint); font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+}
+.identity-divider::before, .identity-divider::after{ content: ''; flex: 1; height: 1px; background: var(--border-soft); }
+.identity-avatar-img{ width: 20px; height: 20px; border-radius: 50%; object-fit: cover; flex: none; }
+.identity-avatar-img--lg{ width: 34px; height: 34px; }
+
 .identity-widget{
   display: flex; align-items: center; gap: 9px;
   background: transparent; border: none; padding: 7px 11px; border-radius: var(--radius-sm);
