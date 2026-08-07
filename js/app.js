@@ -27,8 +27,20 @@
   const BUG_STATUS_LABEL = { backlog: 'Open', 'in-progress': 'In Progress', blocked: 'Blocked', done: 'Closed' };
 
   /* ---------------- State ---------------- */
+  const DEFAULT_GROUPS = [
+    { id: 'grp_coc', name: 'COC' },
+    { id: 'grp_cec', name: 'CEC' },
+    { id: 'grp_csc', name: 'CSC' },
+  ];
+
   function migrateState(s){
     if (!Array.isArray(s.epics)) s.epics = [];
+    if (!Array.isArray(s.groups) || !s.groups.length) s.groups = DEFAULT_GROUPS.map(g => ({ ...g }));
+    if (!Array.isArray(s.releases)) s.releases = [];
+    if (!s.releases.length){
+      const start = mondayOf(addDaysISO(todayISO(), -14));
+      s.releases.push({ id: uid('rel'), name: 'Sprint 24.1', startDate: start, endDate: addDaysISO(start, 27), isDefault: true });
+    }
     if (!s.settings) s.settings = {};
     if (!Array.isArray(s.settings.subtaskTemplate) || !s.settings.subtaskTemplate.length){
       s.settings.subtaskTemplate = DEFAULT_SUBTASK_TEMPLATE.slice();
@@ -36,7 +48,13 @@
     if (!s.settings.standupTime) s.settings.standupTime = '10:30';
     if (!s.settings.eodTime) s.settings.eodTime = '19:00';
     if (!s.settings.notifyTime) s.settings.notifyTime = '19:15';
-    s.developers.forEach(d => { if (typeof d.isAdmin !== 'boolean') d.isAdmin = false; });
+    if (!s.settings.dailyEstimateHours) s.settings.dailyEstimateHours = 8;
+    const defaultReleaseId = (s.releases.find(r => r.isDefault) || s.releases[0]).id;
+    s.developers.forEach(d => {
+      if (typeof d.isAdmin !== 'boolean') d.isAdmin = false;
+      if (typeof d.isTeamLead !== 'boolean') d.isTeamLead = false;
+      if (d.groupId === undefined) d.groupId = null;
+    });
     if (!s.developers.some(d => d.isAdmin) && s.developers[0]) s.developers[0].isAdmin = true;
     s.tickets.forEach(t => {
       if (!Array.isArray(t.subtasks)){
@@ -46,7 +64,13 @@
       if (t.status === 'review') t.status = 'in-progress'; // "In review" column was retired
       if (t.type === 'change-request') t.type = 'task'; // Change Request type was retired
       if (!Array.isArray(t.dependsOn)) t.dependsOn = [];
+      if (!t.releaseId) t.releaseId = defaultReleaseId;
+      if (t.plannedWeekStart === undefined) t.plannedWeekStart = null;
     });
+    s.epics.forEach(e => { if (!e.releaseId) e.releaseId = defaultReleaseId; });
+    if (!s.weeklyPlan) s.weeklyPlan = {};
+    if (!s.weeklyPlan.overrides) s.weeklyPlan.overrides = {}; // { [groupId]: { [weekStartISO]: hours } }
+    if (!s.weeklyPlan.reasons) s.weeklyPlan.reasons = {};     // { [devId]: { [weekStartISO]: "reason text" } }
     return s;
   }
 
@@ -59,6 +83,7 @@
     reportPeriod: 'weekly',
     adminTab: 'dashboard',
     adminResourceFilter: '',
+    releaseId: '', // '' = all releases
   };
 
   const LEGACY_STORE_KEY = 'trackline_v1'; // pre-rename key, migrated below if found
@@ -94,11 +119,11 @@
 
   function seedState(){
     const devs = [
-      { id: 'dev_mohan',     name: 'Mohan',     role: 'Backend Developer',  color: AVATAR_COLORS[0], email: 'mohan@example.com' },
-      { id: 'dev_hammed',    name: 'Hammed',    role: 'Full-stack Developer', color: AVATAR_COLORS[1], email: 'hammed@example.com' },
-      { id: 'dev_arul',      name: 'Arul',      role: 'Frontend Developer', color: AVATAR_COLORS[2], email: 'arul@example.com' },
-      { id: 'dev_rajeshari', name: 'Rajeshari', role: 'QA Engineer',        color: AVATAR_COLORS[3], email: 'rajeshari@example.com' },
-      { id: 'dev_naveen',    name: 'Naveen',    role: 'Tech Lead',          color: AVATAR_COLORS[4], isAdmin: true, email: 'naveen@example.com' },
+      { id: 'dev_mohan',     name: 'Mohan',     role: 'Backend Developer',  color: AVATAR_COLORS[0], email: 'mohan@example.com', groupId: 'grp_coc' },
+      { id: 'dev_hammed',    name: 'Hammed',    role: 'Full-stack Developer', color: AVATAR_COLORS[1], email: 'hammed@example.com', groupId: 'grp_coc', isTeamLead: true },
+      { id: 'dev_arul',      name: 'Arul',      role: 'Frontend Developer', color: AVATAR_COLORS[2], email: 'arul@example.com', groupId: 'grp_cec' },
+      { id: 'dev_rajeshari', name: 'Rajeshari', role: 'QA Engineer',        color: AVATAR_COLORS[3], email: 'rajeshari@example.com', groupId: 'grp_csc' },
+      { id: 'dev_naveen',    name: 'Naveen',    role: 'Tech Lead',          color: AVATAR_COLORS[4], isAdmin: true, email: 'naveen@example.com', groupId: 'grp_coc' },
     ];
 
     const epics = [
@@ -169,6 +194,15 @@
     tickets[1].dependsOn = [tickets[0].id];
     tickets[2].dependsOn = [tickets[1].id];
 
+    // plan a couple of weeks of demo data for the Admin Delivery Plan view
+    const thisMonday = mondayOf(todayISO());
+    const lastMonday = mondayOf(todayISO(-7));
+    tickets[0].plannedWeekStart = lastMonday;
+    tickets[1].plannedWeekStart = lastMonday;
+    tickets[2].plannedWeekStart = thisMonday;
+    tickets[3].plannedWeekStart = thisMonday;
+    tickets[4].plannedWeekStart = lastMonday;
+
     const logs = [
       { id: uid('l'), devId: 'dev_mohan',     date: todayISO(0),  session: 'AM', hours: 2,   ticketId: tickets[0].id, note: '' },
       { id: uid('l'), devId: 'dev_mohan',     date: todayISO(0),  session: 'PM', hours: 1.5, ticketId: tickets[0].id, note: '' },
@@ -186,10 +220,37 @@
   function devById(id){ return state.developers.find(d => d.id === id); }
   function currentUser(){ return devById(localStorage.getItem(IDENTITY_KEY)); }
   function isCurrentUserAdmin(){ const u = currentUser(); return !!(u && u.isAdmin); }
+  function isCurrentUserTeamLead(){ const u = currentUser(); return !!(u && u.isTeamLead && u.groupId); }
+
+  /** Which developer IDs the current user is allowed to see across Board/Tickets/Epics/Dashboard/Timesheet/Team.
+   *  Admins: everyone. Team Leads: everyone in their group. Everyone else: just themselves. */
+  function visibleDevIds(){
+    const me = currentUser();
+    if (!me) return [];
+    if (me.isAdmin) return state.developers.map(d => d.id);
+    if (me.isTeamLead && me.groupId) return state.developers.filter(d => d.groupId === me.groupId).map(d => d.id);
+    return [me.id];
+  }
+
+  function groupById(id){ return state.groups.find(g => g.id === id); }
+  function releaseById(id){ return state.releases.find(r => r.id === id); }
+  function currentRelease(){ return releaseById(ui.releaseId) || state.releases.find(r => r.isDefault) || state.releases[0]; }
+
+  /** Tickets in the selected release (or all releases) AND within the viewer's visibility scope. */
+  function scopedTickets(){
+    const devIds = visibleDevIds();
+    return state.tickets.filter(t => (!ui.releaseId || t.releaseId === ui.releaseId) && devIds.includes(t.assignee));
+  }
+  function scopedEpics(){
+    return state.epics.filter(e => !ui.releaseId || e.releaseId === ui.releaseId);
+  }
   function ticketById(id){ return state.tickets.find(t => t.id === id); }
   function epicById(id){ return state.epics.find(e => e.id === id); }
 
-  function storiesForEpic(epicId){ return state.tickets.filter(t => t.epicId === epicId); }
+  function storiesForEpic(epicId){
+    const devIds = visibleDevIds();
+    return state.tickets.filter(t => t.epicId === epicId && devIds.includes(t.assignee));
+  }
 
   function epicProgress(epic){
     const stories = storiesForEpic(epic.id);
@@ -251,6 +312,40 @@
     return daysAgo(iso) < n && daysAgo(iso) >= 0;
   }
 
+  function mondayOf(iso){
+    const d = new Date(iso + 'T00:00:00');
+    const day = d.getDay(); // 0=Sun..6=Sat
+    d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
+    return d.toISOString().slice(0, 10);
+  }
+  function addDaysISO(iso, n){
+    const d = new Date(iso + 'T00:00:00');
+    d.setDate(d.getDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+  function shortDate(iso){
+    const d = new Date(iso + 'T00:00:00');
+    return `${d.getDate()}/${d.toLocaleString(undefined, { month: 'short' })}`;
+  }
+  /** "3/Aug - 7/Aug" style label for the Mon-Fri work week containing this Monday date. */
+  function weekRangeLabel(mondayISO){
+    return `${shortDate(mondayISO)} - ${shortDate(addDaysISO(mondayISO, 4))}`;
+  }
+  /** All Monday dates spanning [startISO, endISO], inclusive. */
+  function weeksInRange(startISO, endISO){
+    if (!startISO || !endISO) return [];
+    const weeks = [];
+    let cur = mondayOf(startISO);
+    const last = mondayOf(endISO);
+    let guard = 0;
+    while (cur <= last && guard < 104){ // cap at 2 years of weeks as a safety guard
+      weeks.push(cur);
+      cur = addDaysISO(cur, 7);
+      guard++;
+    }
+    return weeks;
+  }
+
   /* ---------------- Toast ---------------- */
   let toastTimer;
   function toast(msg){
@@ -274,6 +369,15 @@
   };
 
   const SEARCH_VISIBLE_VIEWS = ['board', 'tickets', 'dependencies'];
+  const RELEASE_VISIBLE_VIEWS = ['epics', 'board', 'tickets', 'dependencies', 'timesheet', 'team'];
+
+  function refreshReleaseSelect(view){
+    const sel = document.getElementById('releaseSelect');
+    sel.hidden = !RELEASE_VISIBLE_VIEWS.includes(view);
+    if (sel.hidden) return;
+    sel.innerHTML = `<option value="">All releases</option>` +
+      state.releases.map(r => `<option value="${r.id}" ${ui.releaseId===r.id?'selected':''}>${escapeHTML(r.name)}</option>`).join('');
+  }
 
   function refreshIdentityUI(){
     const u = currentUser();
@@ -290,7 +394,7 @@
       avatarEl.style.background = '#2A3140';
     }
     document.querySelector('.identity-widget__switch').textContent = usingGoogleAuth ? 'Sign out' : 'Switch';
-    document.getElementById('adminNavLink').hidden = !isCurrentUserAdmin();
+    document.getElementById('adminNavLink').hidden = !(isCurrentUserAdmin() || isCurrentUserTeamLead());
   }
 
   function setView(view){
@@ -303,14 +407,20 @@
     document.getElementById('viewSubtitle').textContent =
       view === 'dashboard' ? `Standup at ${state.settings.standupTime} · EOD plan due ${state.settings.eodTime}` : sub;
     document.getElementById('searchWrap').hidden = !SEARCH_VISIBLE_VIEWS.includes(view);
+    refreshReleaseSelect(view);
     refreshIdentityUI();
     render();
   }
 
+  document.getElementById('releaseSelect').addEventListener('change', (e) => {
+    ui.releaseId = e.target.value;
+    render();
+  });
+
   /* ---------------- Render router ---------------- */
   function render(){
     const root = document.getElementById('view');
-    if (ui.view === 'dashboard') root.innerHTML = renderDashboard(currentUser() ? currentUser().id : null);
+    if (ui.view === 'dashboard') root.innerHTML = renderDashboard(currentUser() ? visibleDevIds() : null);
     else if (ui.view === 'epics') root.innerHTML = renderEpics();
     else if (ui.view === 'board') root.innerHTML = renderBoard();
     else if (ui.view === 'tickets') root.innerHTML = renderTickets();
@@ -323,17 +433,22 @@
 
   /* ---------------- Dashboard ---------------- */
   function renderDashboard(filterAssignee){
-    const tickets = filterAssignee ? state.tickets.filter(t => t.assignee === filterAssignee) : state.tickets;
+    let ids = null;
+    if (Array.isArray(filterAssignee)) ids = filterAssignee;
+    else if (filterAssignee) ids = [filterAssignee];
+
+    const tickets = (ids ? state.tickets.filter(t => ids.includes(t.assignee)) : state.tickets)
+      .filter(t => !ui.releaseId || t.releaseId === ui.releaseId);
     const inProgress = tickets.filter(t => effectiveStatus(t) === 'in-progress').length;
     const blocked = tickets.filter(t => effectiveStatus(t) === 'blocked').length;
     const doneThisWeek = tickets.filter(t => t.status === 'done').length;
     const totalEstimate = tickets.reduce((s,t) => s + Number(t.estimate||0), 0);
-    const logsInScope = filterAssignee ? state.timeLogs.filter(l => l.devId === filterAssignee) : state.timeLogs;
+    const logsInScope = ids ? state.timeLogs.filter(l => ids.includes(l.devId)) : state.timeLogs;
     const totalLogged = logsInScope.reduce((s,l) => s + Number(l.hours||0), 0);
     const totalPoints = tickets.reduce((s,t) => s + Number(t.storyPoints||0), 0);
     const pointsDone = tickets.filter(t => t.status === 'done').reduce((s,t) => s + Number(t.storyPoints||0), 0);
 
-    const devsInScope = filterAssignee ? state.developers.filter(d => d.id === filterAssignee) : state.developers;
+    const devsInScope = ids ? state.developers.filter(d => ids.includes(d.id)) : state.developers;
     const hoursByDev = devsInScope.map(d => {
       const logs = state.timeLogs.filter(l => l.devId === d.id && withinLastNDays(l.date, 7));
       const am = logs.filter(l => l.session === 'AM').reduce((s,l)=>s+Number(l.hours||0),0);
@@ -447,7 +562,7 @@
 
   function renderEpics(){
     const q = ui.search.trim().toLowerCase();
-    let epics = state.epics;
+    let epics = scopedEpics();
     if (q) epics = epics.filter(e => e.epicNumber.toLowerCase().includes(q) || e.title.toLowerCase().includes(q));
 
     return `
@@ -500,12 +615,13 @@
   /* ---------------- Board ---------------- */
   function renderBoard(){
     const q = ui.search.trim().toLowerCase();
-    let tickets = state.tickets;
+    let tickets = scopedTickets();
     if (q) tickets = tickets.filter(t => t.ticketNumber.toLowerCase().includes(q) || t.title.toLowerCase().includes(q));
     if (ui.boardAssigneeFilter) tickets = tickets.filter(t => t.assignee === ui.boardAssigneeFilter);
 
+    const visibleDevs = state.developers.filter(d => visibleDevIds().includes(d.id));
     const assigneeOptions = `<option value="">All developers</option>` +
-      state.developers.map(d => `<option value="${d.id}" ${ui.boardAssigneeFilter===d.id?'selected':''}>${escapeHTML(d.name)}</option>`).join('');
+      visibleDevs.map(d => `<option value="${d.id}" ${ui.boardAssigneeFilter===d.id?'selected':''}>${escapeHTML(d.name)}</option>`).join('');
 
     return `
       <div class="table-toolbar">
@@ -573,19 +689,27 @@
   }
 
   /* ---------------- Tickets table ---------------- */
-  function renderTickets(){
+  function renderTickets(forAdmin){
     const q = ui.search.trim().toLowerCase();
-    let tickets = state.tickets;
+    let tickets = forAdmin
+      ? state.tickets.filter(t => (!ui.releaseId || t.releaseId === ui.releaseId) && (isCurrentUserAdmin() || visibleDevIds().includes(t.assignee)))
+      : scopedTickets();
     if (q) tickets = tickets.filter(t => t.ticketNumber.toLowerCase().includes(q) || t.title.toLowerCase().includes(q));
     const { type, status, assignee } = ui.tableFilters;
-    if (type) tickets = tickets.filter(t => t.type === type);
-    if (status) tickets = tickets.filter(t => effectiveStatus(t) === status);
-    if (assignee) tickets = tickets.filter(t => t.assignee === assignee);
+    if (forAdmin){
+      if (ui.adminResourceFilter) tickets = tickets.filter(t => t.assignee === ui.adminResourceFilter);
+    } else {
+      if (type) tickets = tickets.filter(t => t.type === type);
+      if (status) tickets = tickets.filter(t => effectiveStatus(t) === status);
+      if (assignee) tickets = tickets.filter(t => t.assignee === assignee);
+    }
 
     tickets = [...tickets].sort((a,b) => a.ticketNumber.localeCompare(b.ticketNumber, undefined, { numeric: true }));
 
+    const visibleDevs = state.developers.filter(d => visibleDevIds().includes(d.id));
+
     return `
-      <div class="table-toolbar">
+      ${forAdmin ? '' : `<div class="table-toolbar">
         <select class="select-chip" id="filterType">
           <option value="">All types</option>
           <option value="story" ${type==='story'?'selected':''}>Story</option>
@@ -599,9 +723,9 @@
         </select>
         <select class="select-chip" id="filterAssignee">
           <option value="">All developers</option>
-          ${state.developers.map(d => `<option value="${d.id}" ${assignee===d.id?'selected':''}>${escapeHTML(d.name)}</option>`).join('')}
+          ${visibleDevs.map(d => `<option value="${d.id}" ${assignee===d.id?'selected':''}>${escapeHTML(d.name)}</option>`).join('')}
         </select>
-      </div>
+      </div>`}
       <div class="table-wrap">
         <table class="data-table">
           <thead>
@@ -648,9 +772,8 @@
   }
 
   /* ---------------- Dependencies ---------------- */
-  function computeLayers(){
+  function computeLayers(tickets){
     const layerOf = {};
-    const tickets = state.tickets;
     function layer(t, seen){
       if (layerOf[t.id] !== undefined) return layerOf[t.id];
       if (seen.has(t.id)) return 0; // cycle guard
@@ -668,8 +791,9 @@
   }
 
   function renderDependencies(){
-    const layers = computeLayers();
-    const edgesCount = state.tickets.reduce((s,t) => s + (t.dependsOn||[]).length, 0);
+    const tickets = scopedTickets();
+    const layers = computeLayers(tickets);
+    const edgesCount = tickets.reduce((s,t) => s + (t.dependsOn||[]).length, 0);
 
     const graph = `
       <div class="panel" style="margin-bottom:16px">
@@ -699,7 +823,7 @@
       </div>
     `;
 
-    const rows = state.tickets.filter(t => (t.dependsOn||[]).length).flatMap(t =>
+    const rows = tickets.filter(t => (t.dependsOn||[]).length).flatMap(t =>
       (t.dependsOn||[]).map(ticketById).filter(Boolean).map(dep => ({ t, dep }))
     );
 
@@ -722,7 +846,7 @@
 
   /* ---------------- Timesheet ---------------- */
   function renderTimesheetList(logs, opts={}){
-    logs = [...logs].sort((a,b) => b.date.localeCompare(a.date) || (a.session==='AM'?-1:1));
+    logs = [...logs].sort((a,b) => b.date.localeCompare(a.date));
     const byDate = {};
     logs.forEach(l => { (byDate[l.date] = byDate[l.date] || []).push(l); });
     const dates = Object.keys(byDate).sort((a,b) => b.localeCompare(a));
@@ -737,8 +861,7 @@
           const dev = devById(l.devId);
           const t = l.ticketId ? ticketById(l.ticketId) : null;
           return `
-          <div class="log-row" data-id="${l.id}">
-            <span class="session-pill session-pill--${l.session}">${l.session}</span>
+          <div class="log-row log-row--no-session" data-id="${l.id}">
             <span class="log-row__dev">${avatarHTML(l.devId)} ${dev ? escapeHTML(dev.name) : 'Unknown'}</span>
             <span class="mono" style="color:var(--text-dim)">${t ? escapeHTML(t.ticketNumber) + ' · ' + escapeHTML(t.title) : 'No ticket · standup / planning'}</span>
             <span class="log-row__hours">${l.hours}h</span>
@@ -755,12 +878,16 @@
   function renderTimesheet(){
     const me = currentUser();
     if (!me) return `<div class="empty"><p>Choose who you are to see your timesheet.</p></div>`;
-    const logs = state.timeLogs.filter(l => l.devId === me.id);
-    const weekTotal = logs.filter(l => withinLastNDays(l.date, 7)).reduce((s,l) => s + Number(l.hours||0), 0);
+    const devIds = visibleDevIds();
+    let logs = state.timeLogs.filter(l => devIds.includes(l.devId));
+    if (ui.releaseId){
+      logs = logs.filter(l => !l.ticketId || (ticketById(l.ticketId) && ticketById(l.ticketId).releaseId === ui.releaseId));
+    }
+    const weekTotal = logs.filter(l => l.devId === me.id && withinLastNDays(l.date, 7)).reduce((s,l) => s + Number(l.hours||0), 0);
 
     return `
       <div class="timesheet-toolbar">
-        <span class="hint">${weekTotal}h logged in the last 7 days</span>
+        <span class="hint">${weekTotal}h logged by you in the last 7 days${devIds.length > 1 ? ' · showing your team' : ''}</span>
         <button class="btn btn--primary btn--sm" id="logTimeBtn" style="margin-left:auto">
           <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
           Log time
@@ -777,6 +904,25 @@
     { id: 'monthly', label: 'Monthly', days: 30 },
     { id: 'yearly',  label: 'Yearly',  days: 365 },
   ];
+
+  function devWeekStats(devId, weekStart){
+    const weekEnd = addDaysISO(weekStart, 6);
+    const hours = state.timeLogs
+      .filter(l => l.devId === devId && l.date >= weekStart && l.date <= weekEnd)
+      .reduce((s,l) => s + Number(l.hours||0), 0);
+    const done = state.tickets
+      .filter(t => t.assignee === devId && t.status === 'done' && t.updatedAt && t.updatedAt >= weekStart && t.updatedAt <= weekEnd)
+      .length;
+    return { hours, done };
+  }
+  /** Up to 4 Monday dates covering the current calendar month (5th week folds into week 4). */
+  function currentMonthWeeks(){
+    const now = new Date();
+    const first = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
+    const last = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().slice(0,10);
+    const weeks = weeksInRange(first, last);
+    return weeks.slice(0, 4);
+  }
 
   function devAnalytics(dev, periodDays){
     const myTickets = state.tickets.filter(t => t.assignee === dev.id);
@@ -812,13 +958,79 @@
 
   function renderTeam(filterAssignee){
     const period = REPORT_PERIODS.find(p => p.id === ui.reportPeriod) || REPORT_PERIODS[1];
-    const devs = filterAssignee ? state.developers.filter(d => d.id === filterAssignee) : state.developers;
+    let devs;
+    if (Array.isArray(filterAssignee)) devs = state.developers.filter(d => filterAssignee.includes(d.id));
+    else if (filterAssignee) devs = state.developers.filter(d => d.id === filterAssignee);
+    else devs = state.developers;
+    const grouped = filterAssignee === undefined; // group-by-team view only when showing everyone
+    const canDrag = isCurrentUserAdmin();
+
+    let utilCols;
+    if (period.id === 'monthly'){
+      const weeks = currentMonthWeeks();
+      utilCols = weeks.map((w, i) => ({
+        label: `Week ${i+1}`, sub: weekRangeLabel(w),
+        raw: (dev) => devWeekStats(dev.id, w).hours,
+        text: (dev) => { const st = devWeekStats(dev.id, w); return `${st.done} done · ${st.hours}h`; },
+      }));
+    } else if (period.id === 'weekly'){
+      utilCols = [{ label: 'Utilized', sub: weekRangeLabel(mondayOf(todayISO())),
+        raw: (dev) => devAnalytics(dev, 7).loggedTotal, text: (dev) => `${devAnalytics(dev, 7).loggedTotal}h` }];
+    } else {
+      utilCols = [{ label: 'Utilized', sub: period.label,
+        raw: (dev) => devAnalytics(dev, period.days).loggedTotal, text: (dev) => `${devAnalytics(dev, period.days).loggedTotal}h` }];
+    }
+    const colCount = 9 + utilCols.length;
+
+    function devRowHTML(dev){
+      const a = devAnalytics(dev, period.days);
+      return `
+        <tr class="team-dev-row" data-dev-id="${dev.id}" ${canDrag ? 'draggable="true"' : ''}>
+          <td>${avatarHTML(dev.id)} ${escapeHTML(dev.name)}${dev.isAdmin ? ' <span class="epic-tag">Admin</span>' : ''}${dev.isTeamLead ? ' <span class="epic-tag">Lead</span>' : ''}</td>
+          <td class="mono">${a.stories}</td>
+          <td class="mono">${a.tasks}</td>
+          <td class="mono">${a.bugs}</td>
+          <td class="mono">${a.enhancements}</td>
+          <td class="mono">${a.estimateTotal}h</td>
+          ${utilCols.map(c => `<td class="mono">${c.text(dev)}</td>`).join('')}
+          <td class="mono">${a.remaining}h</td>
+          <td class="mono">${a.utilizationPct}%</td>
+          <td><span class="badge badge--rag-${a.status}"><span class="dot dot--rag-${a.status}"></span>${RAG_LABEL[a.status]}</span></td>
+        </tr>`;
+    }
+
+    function groupHeaderHTML(groupId, name, groupDevs){
+      const totalEst = groupDevs.reduce((s,d) => s + devAnalytics(d, period.days).estimateTotal, 0);
+      const totalUtil = utilCols.map(c => groupDevs.reduce((s,d) => s + c.raw(d), 0));
+      return `
+        <tr class="team-group-row" data-group-drop="${groupId}">
+          <td colspan="${colCount}">
+            <div class="team-group-row__inner">
+              <span class="team-group-row__name">${escapeHTML(name)}</span>
+              <span class="team-group-row__count">${groupDevs.length} developer${groupDevs.length===1?'':'s'}</span>
+              <span class="team-group-row__totals mono">Team total: ${totalEst}h est · ${totalUtil.map(h=>h+'h').join(' / ')} utilized</span>
+            </div>
+          </td>
+        </tr>`;
+    }
+
+    let rows;
+    if (grouped){
+      const groupsPlusUngrouped = [...state.groups, { id: '', name: 'Ungrouped' }];
+      rows = groupsPlusUngrouped.map(g => {
+        const groupDevs = devs.filter(d => (d.groupId || '') === g.id);
+        if (!groupDevs.length && g.id === '') return ''; // skip empty "Ungrouped" section
+        return groupHeaderHTML(g.id, g.name, groupDevs) + groupDevs.map(devRowHTML).join('');
+      }).join('');
+    } else {
+      rows = devs.map(devRowHTML).join('');
+    }
 
     return `
       <div class="panel" id="reportPanel">
         <div class="panel__head">
           <h3>Resource utilization &amp; performance</h3>
-          <span class="hint">Per developer, plus team-wide totals</span>
+          <span class="hint">${grouped && canDrag ? 'Drag a developer onto a team to regroup them · ' : ''}Per developer, plus team-wide totals</span>
         </div>
         <div class="table-toolbar" style="margin-bottom:16px;justify-content:space-between">
           <div class="period-tabs" id="periodTabs">
@@ -844,26 +1056,13 @@
             <thead>
               <tr>
                 <th>Developer</th><th>Stories</th><th>Tasks</th><th>Bugs</th><th>Enh.</th>
-                <th>Estimated</th><th>Utilized (${period.label.toLowerCase()})</th><th>Remaining</th><th>Util. %</th><th>Pace</th>
+                <th>Estimated</th>
+                ${utilCols.map(c => `<th>${c.label}<br><span class="th-sub">${c.sub}</span></th>`).join('')}
+                <th>Remaining</th><th>Util. %</th><th>Pace</th>
               </tr>
             </thead>
             <tbody>
-              ${devs.map(d => {
-                const a = devAnalytics(d, period.days);
-                return `
-                <tr>
-                  <td>${avatarHTML(d.id)} ${escapeHTML(d.name)}${d.isAdmin ? ' <span class="epic-tag">Admin</span>' : ''}</td>
-                  <td class="mono">${a.stories}</td>
-                  <td class="mono">${a.tasks}</td>
-                  <td class="mono">${a.bugs}</td>
-                  <td class="mono">${a.enhancements}</td>
-                  <td class="mono">${a.estimateTotal}h</td>
-                  <td class="mono">${a.loggedTotal}h</td>
-                  <td class="mono">${a.remaining}h</td>
-                  <td class="mono">${a.utilizationPct}%</td>
-                  <td><span class="badge badge--rag-${a.status}"><span class="dot dot--rag-${a.status}"></span>${RAG_LABEL[a.status]}</span></td>
-                </tr>`;
-              }).join('')}
+              ${rows}
             </tbody>
           </table>
         </div>
@@ -879,37 +1078,48 @@
   /* ---------------- Admin ---------------- */
   const ADMIN_TABS = [
     { id: 'dashboard',    label: 'Dashboard' },
+    { id: 'plan',         label: 'Delivery Plan' },
     { id: 'utilization',  label: 'Resource Utilization' },
     { id: 'timesheet',    label: 'Timesheet' },
     { id: 'tickets',      label: 'Tickets' },
+    { id: 'releases',     label: 'Releases' },
     { id: 'settings',     label: 'Settings' },
   ];
 
   function renderAdmin(){
-    if (!isCurrentUserAdmin()){
-      return `<div class="empty"><p>This area is for admins only.</p></div>`;
+    if (!isCurrentUserAdmin() && !isCurrentUserTeamLead()){
+      return `<div class="empty"><p>This area is for admins and team leads only.</p></div>`;
     }
+    const admin = isCurrentUserAdmin();
+    const scopeIds = admin ? null : visibleDevIds(); // team leads are implicitly limited to their group
     const filter = ui.adminResourceFilter;
-    const filterOptions = `<option value="">All developers</option>` +
-      state.developers.map(d => `<option value="${d.id}" ${filter===d.id?'selected':''}>${escapeHTML(d.name)}</option>`).join('');
+    const filterableDevs = state.developers.filter(d => !scopeIds || scopeIds.includes(d.id));
+    const filterOptions = `<option value="">${admin ? 'All developers' : 'My team'}</option>` +
+      filterableDevs.map(d => `<option value="${d.id}" ${filter===d.id?'selected':''}>${escapeHTML(d.name)}</option>`).join('');
+
+    const tabs = ADMIN_TABS.filter(t => admin || (t.id !== 'settings' && t.id !== 'releases'));
+    if (!tabs.some(t => t.id === ui.adminTab)) ui.adminTab = 'dashboard';
 
     let body = '';
-    if (ui.adminTab === 'dashboard') body = renderDashboard(filter || undefined);
-    else if (ui.adminTab === 'utilization') body = renderTeam(filter || undefined);
+    if (ui.adminTab === 'dashboard') body = renderDashboard(filter || scopeIds || undefined);
+    else if (ui.adminTab === 'utilization') body = renderTeam(filter || scopeIds || undefined);
     else if (ui.adminTab === 'timesheet'){
-      const logs = state.timeLogs.filter(l => !filter || l.devId === filter);
+      const effectiveScope = filter ? [filter] : scopeIds;
+      const logs = state.timeLogs.filter(l => !effectiveScope || effectiveScope.includes(l.devId));
       const total = logs.reduce((s,l) => s + Number(l.hours||0), 0);
       body = `<div class="panel"><div class="panel__head"><h3>Team timesheet</h3><span class="hint">${total}h total</span></div>${renderTimesheetList(logs)}</div>`;
     }
-    else if (ui.adminTab === 'tickets') body = renderTickets();
-    else if (ui.adminTab === 'settings') body = renderAdminSettings();
+    else if (ui.adminTab === 'tickets') body = renderTickets(true);
+    else if (ui.adminTab === 'settings' && admin) body = renderAdminSettings();
+    else if (ui.adminTab === 'plan') body = renderAdminPlan();
+    else if (ui.adminTab === 'releases' && admin) body = renderAdminReleases();
 
     return `
       <div class="table-toolbar" style="justify-content:space-between;margin-bottom:18px">
+        ${ui.adminTab !== 'settings' ? `<select class="select-chip" id="adminResourceFilter">${filterOptions}</select>` : '<span></span>'}
         <div class="period-tabs" id="adminTabs">
-          ${ADMIN_TABS.map(t => `<button type="button" class="period-tab${t.id===ui.adminTab?' is-active':''}" data-admin-tab="${t.id}">${t.label}</button>`).join('')}
+          ${tabs.map(t => `<button type="button" class="period-tab${t.id===ui.adminTab?' is-active':''}" data-admin-tab="${t.id}">${t.label}</button>`).join('')}
         </div>
-        ${ui.adminTab !== 'settings' && ui.adminTab !== 'tickets' ? `<select class="select-chip" id="adminResourceFilter">${filterOptions}</select>` : ''}
       </div>
       ${body}
     `;
@@ -937,13 +1147,180 @@
             <input type="time" id="s_notify" value="${s.notifyTime}">
             <p class="field__hint">Shows a browser notification at this time if you haven't logged any hours yet today. Requires the app to be open (or installed) and notification permission granted — it can't wake a fully closed browser.</p>
           </div>
+          <div class="field">
+            <label for="s_dailyHours">Daily estimate (hrs/day)</label>
+            <input type="number" id="s_dailyHours" min="1" max="24" step="0.5" value="${s.dailyEstimateHours}">
+            <p class="field__hint">Used as each developer's standard daily capacity for planning and utilization calculations.</p>
+          </div>
           <button type="submit" class="btn btn--primary">Save settings</button>
         </form>
       </div>
     `;
   }
 
-  /* ---------------- Ticket modal ---------------- */
+  function renderAdminReleases(){
+    return `
+      <div class="panel">
+        <div class="panel__head">
+          <h3>Release versions</h3>
+          <span class="hint">Selecting one in the topbar scopes Epics, Board, Tickets, Dependencies, Timesheet and Team to it</span>
+        </div>
+        <form id="releaseForm" class="form-row" style="align-items:end;margin-bottom:18px">
+          <div class="field" style="margin-bottom:0">
+            <label for="rel_name">New release name</label>
+            <input type="text" id="rel_name" placeholder="e.g. v2.4 or Sprint 12" required>
+          </div>
+          <div class="field" style="margin-bottom:0;display:flex;gap:10px">
+            <div style="flex:1">
+              <label for="rel_start">Start date</label>
+              <input type="date" id="rel_start">
+            </div>
+            <div style="flex:1">
+              <label for="rel_end">End date</label>
+              <input type="date" id="rel_end">
+            </div>
+          </div>
+        </form>
+        <button type="submit" form="releaseForm" class="btn btn--primary btn--sm" style="margin-bottom:18px">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Add release
+        </button>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Release</th><th>Start</th><th>End</th><th>Tickets</th><th></th></tr></thead>
+            <tbody>
+              ${state.releases.map(r => {
+                const count = state.tickets.filter(t => t.releaseId === r.id).length;
+                return `
+                <tr>
+                  <td>${escapeHTML(r.name)}${r.isDefault ? ' <span class="epic-tag">Default</span>' : ''}</td>
+                  <td class="mono">${r.startDate ? fmtDate(r.startDate) : '—'}</td>
+                  <td class="mono">${r.endDate ? fmtDate(r.endDate) : '—'}</td>
+                  <td class="mono">${count}</td>
+                  <td>${!r.isDefault ? `<button class="icon-btn deleteReleaseBtn" data-id="${r.id}" aria-label="Delete release">
+                    <svg viewBox="0 0 16 16" fill="none"><path d="M3 4.5h10M6.5 4.5V3a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5M4.5 4.5 5 13a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1l.5-8.5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                  </button>` : ''}</td>
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+  }
+
+  /* ---------------- Delivery Plan (high-level by team, low-level by developer) ---------------- */
+  function groupWeekEstimate(groupId, weekStart, releaseId){
+    const override = (state.weeklyPlan.overrides[groupId] || {})[weekStart];
+    if (override != null) return override;
+    const devIds = state.developers.filter(d => (d.groupId||'') === groupId).map(d => d.id);
+    return state.tickets
+      .filter(t => devIds.includes(t.assignee) && t.plannedWeekStart === weekStart && (!releaseId || t.releaseId === releaseId))
+      .reduce((s,t) => s + Number(t.estimate||0), 0);
+  }
+  function groupWeekActual(groupId, weekStart){
+    const devIds = state.developers.filter(d => (d.groupId||'') === groupId).map(d => d.id);
+    const weekEnd = addDaysISO(weekStart, 6);
+    return state.timeLogs
+      .filter(l => devIds.includes(l.devId) && l.date >= weekStart && l.date <= weekEnd)
+      .reduce((s,l) => s + Number(l.hours||0), 0);
+  }
+  function devWeekEstimate(devId, weekStart, releaseId){
+    return state.tickets
+      .filter(t => t.assignee === devId && t.plannedWeekStart === weekStart && (!releaseId || t.releaseId === releaseId))
+      .reduce((s,t) => s + Number(t.estimate||0), 0);
+  }
+  function devWeekActual(devId, weekStart){
+    const weekEnd = addDaysISO(weekStart, 6);
+    return state.timeLogs
+      .filter(l => l.devId === devId && l.date >= weekStart && l.date <= weekEnd)
+      .reduce((s,l) => s + Number(l.hours||0), 0);
+  }
+
+  function renderAdminPlan(){
+    const rel = currentRelease();
+    if (!rel || !rel.startDate || !rel.endDate){
+      return `<div class="empty"><p>Select (or create in the Releases tab) a release with start and end dates to see the delivery plan — it's built from ticket estimates planned across that date range.</p></div>`;
+    }
+    const weeks = weeksInRange(rel.startDate, rel.endDate);
+    if (!weeks.length) return `<div class="empty"><p>This release's date range doesn't span a full week yet.</p></div>`;
+
+    const admin = isCurrentUserAdmin();
+    const myGroupId = currentUser() ? currentUser().groupId : null;
+    const groupsToShow = admin ? state.groups : state.groups.filter(g => g.id === myGroupId);
+
+    const highLevel = `
+      <div class="panel" style="margin-bottom:16px">
+        <div class="panel__head">
+          <h3>High-level: weekly delivery by team</h3>
+          <span class="hint">${escapeHTML(rel.name)} · ${fmtDate(rel.startDate)} – ${fmtDate(rel.endDate)}</span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Team</th>${weeks.map(w => `<th>${weekRangeLabel(w)}</th>`).join('')}</tr></thead>
+            <tbody>
+              ${groupsToShow.map(g => {
+                const canEdit = admin || (isCurrentUserTeamLead() && myGroupId === g.id);
+                return `
+                <tr>
+                  <td>${escapeHTML(g.name)}</td>
+                  ${weeks.map(w => {
+                    const est = groupWeekEstimate(g.id, w, rel.id);
+                    const act = groupWeekActual(g.id, w);
+                    const hasOverride = (state.weeklyPlan.overrides[g.id] || {})[w] != null;
+                    return `<td>
+                      <div class="mono" style="font-size:11px;color:var(--text-faint);margin-bottom:3px">${act}h delivered</div>
+                      ${canEdit
+                        ? `<input type="number" class="plan-override-input" data-group="${g.id}" data-week="${w}" value="${est}" min="0" step="0.5" title="${hasOverride ? 'Manually adjusted' : 'Auto-summed from ticket estimates'}">`
+                        : `<span class="mono">${est}h</span>`}
+                    </div>`;
+                  }).join('')}
+                </tr>`;
+              }).join('')}
+            </tbody>
+          </table>
+        </div>
+        <p class="field__hint" style="margin-top:10px">"Delivered" sums logged hours that week. The editable estimate auto-sums ticket estimates planned for that week (via each ticket's "Planned week" field) — team leads and admins can type over it to set a manual target.</p>
+      </div>
+    `;
+
+    const devIds = admin ? (ui.adminResourceFilter ? [ui.adminResourceFilter] : state.developers.map(d=>d.id)) : visibleDevIds();
+    const planDevs = state.developers.filter(d => devIds.includes(d.id));
+    const lowLevel = `
+      <div class="panel">
+        <div class="panel__head">
+          <h3>Low-level: weekly plan vs actual by developer</h3>
+          <span class="hint">A reason is needed when actual exceeds the estimate</span>
+        </div>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Developer</th><th>Week</th><th>Estimated</th><th>Actual</th><th>Variance</th><th>Reason</th></tr></thead>
+            <tbody>
+              ${planDevs.flatMap(d => weeks.map(w => {
+                const est = devWeekEstimate(d.id, w, rel.id);
+                const act = devWeekActual(d.id, w);
+                const over = act > est;
+                const reason = (state.weeklyPlan.reasons[d.id] || {})[w] || '';
+                return `
+                <tr>
+                  <td>${avatarHTML(d.id)} ${escapeHTML(d.name)}</td>
+                  <td class="mono">${weekRangeLabel(w)}</td>
+                  <td class="mono">${est}h</td>
+                  <td class="mono">${act}h</td>
+                  <td>${over ? `<span class="badge badge--rag-behind">+${(act-est).toFixed(1)}h over</span>` : `<span class="badge badge--rag-ahead">On plan</span>`}</td>
+                  <td>${over
+                    ? `<input type="text" class="reason-input" data-reason-dev="${d.id}" data-reason-week="${w}" value="${escapeHTML(reason)}" placeholder="Why did actual exceed estimate?">`
+                    : (reason ? escapeHTML(reason) : '<span class="dep-chip">—</span>')}</td>
+                </tr>`;
+              })).join('')}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    return highLevel + lowLevel;
+  }
   const ticketModalOverlay = document.getElementById('ticketModalOverlay');
   const ticketForm = document.getElementById('ticketForm');
 
@@ -959,6 +1336,9 @@
     const epicSel = document.getElementById('f_epic');
     epicSel.innerHTML = `<option value="">— No epic —</option>` +
       state.epics.map(e => `<option value="${e.id}">${escapeHTML(e.epicNumber)} — ${escapeHTML(e.title)}</option>`).join('');
+
+    const releaseSel = document.getElementById('f_release');
+    releaseSel.innerHTML = state.releases.map(r => `<option value="${r.id}">${escapeHTML(r.name)}</option>`).join('');
   }
 
   /* ---------------- Effort estimation (Fibonacci story points) ---------------- */
@@ -1023,6 +1403,8 @@
     document.getElementById('f_status').value = ticket ? ticket.status : 'backlog';
     document.getElementById('f_estimate').value = ticket ? ticket.estimate : '';
     document.getElementById('f_epic').value = ticket ? (ticket.epicId || '') : '';
+    document.getElementById('f_release').value = ticket ? ticket.releaseId : (currentRelease() ? currentRelease().id : '');
+    document.getElementById('f_plannedWeek').value = ticket && ticket.plannedWeekStart ? ticket.plannedWeekStart : '';
     setPointsPicker(ticket && ticket.storyPoints != null ? ticket.storyPoints : 0);
     document.getElementById('f_blockerNote').value = ticket ? ticket.blockerNote || '' : '';
     document.getElementById('f_description').value = ticket ? ticket.description || '' : '';
@@ -1185,6 +1567,8 @@
       status: document.getElementById('f_status').value,
       estimate: parseFloat(document.getElementById('f_estimate').value) || 0,
       epicId: document.getElementById('f_epic').value || null,
+      releaseId: document.getElementById('f_release').value || currentRelease().id,
+      plannedWeekStart: document.getElementById('f_plannedWeek').value ? mondayOf(document.getElementById('f_plannedWeek').value) : null,
       storyPoints: parseFloat(document.getElementById('f_storyPoints').value) || 0,
       dependsOn,
       blockerNote: document.getElementById('f_blockerNote').value.trim(),
@@ -1397,8 +1781,24 @@
   const memberModalOverlay = document.getElementById('memberModalOverlay');
   const memberForm = document.getElementById('memberForm');
 
-  function openTeamMemberModal(){
+  function openTeamMemberModal(member){
     memberForm.reset();
+    document.getElementById('memberModalTitle').textContent = member ? 'Edit team member' : 'Add team member';
+    document.getElementById('memberSubmitBtn').textContent = member ? 'Save changes' : 'Add member';
+    document.getElementById('deleteMemberBtn').hidden = !member;
+    document.getElementById('m_id').value = member ? member.id : '';
+
+    const groupSel = document.getElementById('m_group');
+    groupSel.innerHTML = `<option value="">— Unassigned —</option>` +
+      state.groups.map(g => `<option value="${g.id}">${escapeHTML(g.name)}</option>`).join('');
+
+    document.getElementById('m_name').value = member ? member.name : '';
+    document.getElementById('m_role').value = member ? member.role : '';
+    document.getElementById('m_email').value = member ? (member.email || '') : '';
+    groupSel.value = member ? (member.groupId || '') : '';
+    document.getElementById('m_isTeamLead').checked = member ? !!member.isTeamLead : false;
+    document.getElementById('m_isAdmin').checked = member ? !!member.isAdmin : false;
+
     memberModalOverlay.hidden = false;
     document.getElementById('m_name').focus();
   }
@@ -1410,19 +1810,48 @@
 
   memberForm.addEventListener('submit', (e) => {
     e.preventDefault();
+    const id = document.getElementById('m_id').value;
     const name = document.getElementById('m_name').value.trim();
     const role = document.getElementById('m_role').value.trim();
     const email = document.getElementById('m_email').value.trim();
+    const groupId = document.getElementById('m_group').value || null;
+    const isTeamLead = document.getElementById('m_isTeamLead').checked;
     const isAdmin = document.getElementById('m_isAdmin').checked;
     if (!name || !role) return;
-    state.developers.push({
-      id: uid('dev'), name, role, isAdmin, email: email || null, photoURL: null,
-      color: AVATAR_COLORS[state.developers.length % AVATAR_COLORS.length],
-    });
+
+    if (id){
+      const dev = devById(id);
+      if (dev) Object.assign(dev, { name, role, email: email || null, groupId, isTeamLead, isAdmin });
+      toast(`${name} updated`);
+    } else {
+      state.developers.push({
+        id: uid('dev'), name, role, isAdmin, isTeamLead, groupId, email: email || null, photoURL: null,
+        color: AVATAR_COLORS[state.developers.length % AVATAR_COLORS.length],
+      });
+      toast(`${name} added to the team`);
+    }
     saveState();
     closeMemberModal();
-    toast(`${name} added to the team`);
     render();
+  });
+
+  document.getElementById('deleteMemberBtn').addEventListener('click', () => {
+    const id = document.getElementById('m_id').value;
+    if (!id) return;
+    const dev = devById(id);
+    if (!dev) return;
+    const hasTickets = state.tickets.some(t => t.assignee === id);
+    const confirmMsg = hasTickets
+      ? `Remove ${dev.name}? They have tickets assigned — those will become unassigned, not deleted.`
+      : `Remove ${dev.name} from the team?`;
+    if (!confirm(confirmMsg)) return;
+    state.developers = state.developers.filter(d => d.id !== id);
+    state.tickets.forEach(t => { if (t.assignee === id) t.assignee = null; });
+    if (currentUser() && currentUser().id === id) localStorage.removeItem(IDENTITY_KEY);
+    saveState();
+    closeMemberModal();
+    toast(`${dev.name} removed`);
+    if (!currentUser()) openIdentityModal(false); else render();
   });
 
   /* ---------------- Time log modal ---------------- */
@@ -1516,16 +1945,14 @@
     rows.push('');
     rows.push(csvRow(['Resource-wise Report']));
     rows.push(csvRow([
-      'Developer', 'Role', 'Admin', 'Stories', 'Tasks', 'Bugs', 'Enhancements',
-      'Total Tickets', 'Story Points Done/Total', 'Estimated Hrs', `Utilized Hrs (${period.label})`, 'Remaining Hrs',
+      'Developer', 'Stories', 'Tasks', 'Bugs', 'Enhancements',
+      'Total Tickets', 'Estimated Hrs', `Utilized Hrs (${period.label})`, 'Remaining Hrs',
       'Utilization %', 'Pace'
     ]));
     perDev.forEach(({ dev, a }) => {
-      const pointsTotal = a.myTickets.reduce((s,t) => s + Number(t.storyPoints||0), 0);
-      const pointsDone = a.myTickets.filter(t => t.status === 'done').reduce((s,t) => s + Number(t.storyPoints||0), 0);
       rows.push(csvRow([
-        dev.name, dev.role, dev.isAdmin ? 'Yes' : 'No', a.stories, a.tasks, a.bugs, a.enhancements,
-        a.myTickets.length, `${pointsDone}/${pointsTotal}`, a.estimateTotal, a.loggedTotal, a.remaining,
+        dev.name, a.stories, a.tasks, a.bugs, a.enhancements,
+        a.myTickets.length, a.estimateTotal, a.loggedTotal, a.remaining,
         a.utilizationPct + '%', RAG_LABEL[a.status]
       ]));
     });
@@ -1709,10 +2136,66 @@
       btn.addEventListener('click', () => { ui.adminTab = btn.dataset.adminTab; render(); });
     });
     const addTeamMemberBtn = document.getElementById('addTeamMemberBtn');
-    if (addTeamMemberBtn) addTeamMemberBtn.addEventListener('click', openTeamMemberModal);
+    if (addTeamMemberBtn) addTeamMemberBtn.addEventListener('click', () => openTeamMemberModal(null));
+
+    document.querySelectorAll('.team-dev-row').forEach(row => {
+      row.addEventListener('click', () => {
+        if (row.getAttribute('data-dragging') === '1') return;
+        openTeamMemberModal(devById(row.dataset.devId));
+      });
+      row.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', row.dataset.devId);
+        row.setAttribute('data-dragging', '1');
+        setTimeout(() => row.classList.add('is-dragging'), 0);
+      });
+      row.addEventListener('dragend', () => {
+        row.removeAttribute('data-dragging');
+        row.classList.remove('is-dragging');
+      });
+    });
+    document.querySelectorAll('.team-group-row').forEach(row => {
+      row.addEventListener('dragover', (e) => e.preventDefault());
+      row.addEventListener('dragenter', (e) => { e.preventDefault(); row.classList.add('is-dragover'); });
+      row.addEventListener('dragleave', (e) => { if (!row.contains(e.relatedTarget)) row.classList.remove('is-dragover'); });
+      row.addEventListener('drop', (e) => {
+        e.preventDefault();
+        row.classList.remove('is-dragover');
+        const devId = e.dataTransfer.getData('text/plain');
+        const dev = devById(devId);
+        if (!dev) return;
+        const newGroupId = row.dataset.groupDrop || null;
+        if ((dev.groupId || '') === newGroupId) return;
+        dev.groupId = newGroupId || null;
+        saveState();
+        toast(`${dev.name} moved to ${groupById(newGroupId) ? groupById(newGroupId).name : 'Ungrouped'}`);
+        render();
+      });
+    });
 
     const adminResourceFilter = document.getElementById('adminResourceFilter');
     if (adminResourceFilter) adminResourceFilter.addEventListener('change', (e) => { ui.adminResourceFilter = e.target.value; render(); });
+
+    document.querySelectorAll('.plan-override-input').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const groupId = inp.dataset.group;
+        const week = inp.dataset.week;
+        const val = parseFloat(inp.value);
+        if (!state.weeklyPlan.overrides[groupId]) state.weeklyPlan.overrides[groupId] = {};
+        state.weeklyPlan.overrides[groupId][week] = isNaN(val) ? null : val;
+        saveState();
+        toast('Weekly estimate updated');
+      });
+    });
+    document.querySelectorAll('.reason-input').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const devId = inp.dataset.reasonDev;
+        const week = inp.dataset.reasonWeek;
+        if (!state.weeklyPlan.reasons[devId]) state.weeklyPlan.reasons[devId] = {};
+        state.weeklyPlan.reasons[devId][week] = inp.value.trim();
+        saveState();
+        toast('Reason saved');
+      });
+    });
 
     const adminSettingsForm = document.getElementById('adminSettingsForm');
     if (adminSettingsForm) adminSettingsForm.addEventListener('submit', (e) => {
@@ -1720,9 +2203,43 @@
       state.settings.standupTime = document.getElementById('s_standup').value || state.settings.standupTime;
       state.settings.eodTime = document.getElementById('s_eod').value || state.settings.eodTime;
       state.settings.notifyTime = document.getElementById('s_notify').value || state.settings.notifyTime;
+      state.settings.dailyEstimateHours = parseFloat(document.getElementById('s_dailyHours').value) || state.settings.dailyEstimateHours;
       saveState();
       toast('Settings saved for the whole team');
       if (ui.view === 'dashboard') setView('dashboard');
+    });
+
+    const releaseForm = document.getElementById('releaseForm');
+    if (releaseForm) releaseForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const name = document.getElementById('rel_name').value.trim();
+      if (!name) return;
+      state.releases.push({
+        id: uid('rel'), name,
+        startDate: document.getElementById('rel_start').value || null,
+        endDate: document.getElementById('rel_end').value || null,
+        isDefault: false,
+      });
+      saveState();
+      toast(`${name} added`);
+      render();
+    });
+    document.querySelectorAll('.deleteReleaseBtn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const rel = releaseById(btn.dataset.id);
+        if (!rel) return;
+        const count = state.tickets.filter(t => t.releaseId === rel.id).length;
+        if (!confirm(`Delete "${rel.name}"?${count ? ` ${count} ticket(s) will move to the default release.` : ''}`)) return;
+        const fallback = state.releases.find(r => r.isDefault) || state.releases[0];
+        state.tickets.forEach(t => { if (t.releaseId === rel.id) t.releaseId = fallback.id; });
+        state.epics.forEach(ep => { if (ep.releaseId === rel.id) ep.releaseId = fallback.id; });
+        state.releases = state.releases.filter(r => r.id !== rel.id);
+        if (ui.releaseId === rel.id) ui.releaseId = '';
+        saveState();
+        toast(`${rel.name} deleted`);
+        render();
+      });
     });
   }
 
