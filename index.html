@@ -96,6 +96,7 @@
         <p id="viewSubtitle" class="topbar__subtitle">Standup at 09:00 · EOD plan due 18:00</p>
       </div>
       <div class="topbar__actions">
+        <select class="select-chip" id="releaseSelect" hidden></select>
         <div class="search" id="searchWrap">
           <svg viewBox="0 0 20 20" fill="none"><circle cx="8.5" cy="8.5" r="5.5" stroke="currentColor" stroke-width="1.6"/><path d="M16 16l-3.2-3.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
           <input type="text" id="searchInput" placeholder="Search tickets, e.g. CCS-123">
@@ -214,6 +215,18 @@
         </div>
       </div>
       <p class="field__hint" id="statusHint" style="margin-top:-10px;margin-bottom:14px" hidden>For bugs this reads as the standard defect lifecycle: Open → In Progress → Closed (Blocked still applies if it's waiting on a dependency).</p>
+
+      <div class="form-row">
+        <div class="field">
+          <label for="f_release">Release</label>
+          <select id="f_release"></select>
+        </div>
+        <div class="field">
+          <label for="f_plannedWeek">Planned week</label>
+          <input type="date" id="f_plannedWeek">
+          <p class="field__hint">Optional — pick any day in the target week. Used by the Admin Delivery Plan to sum estimates per week.</p>
+        </div>
+      </div>
 
       <div class="field">
         <label>Effort estimation</label>
@@ -356,18 +369,19 @@
 <div class="modal-overlay" id="memberModalOverlay" hidden>
   <div class="modal modal--sm" role="dialog" aria-modal="true">
     <div class="modal__header">
-      <h2>Add team member</h2>
+      <h2 id="memberModalTitle">Add team member</h2>
       <button class="icon-btn" id="closeMemberModalBtn" aria-label="Close">
         <svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5 5 15" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>
     </div>
     <form id="memberForm" class="modal__body">
+      <input type="hidden" id="m_id">
       <div class="field">
         <label for="m_name">Name</label>
         <input type="text" id="m_name" placeholder="e.g. Priya" required>
       </div>
       <div class="field">
-        <label for="m_role">Role</label>
+        <label for="m_role">Job title</label>
         <input type="text" id="m_role" placeholder="e.g. Backend Developer" required>
       </div>
       <div class="field">
@@ -376,15 +390,26 @@
         <p class="field__hint">Optional. If set, signing in with this Google account will be recognized as this person — otherwise a new profile is created automatically the first time they sign in.</p>
       </div>
       <div class="field">
+        <label for="m_group">Group</label>
+        <select id="m_group">
+          <option value="">— Unassigned —</option>
+        </select>
+      </div>
+      <div class="field">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px">
+          <input type="checkbox" id="m_isTeamLead" style="width:auto">
+          <span>Team Lead (sees everyone in their group across Board, Tickets, Epics, Dashboard, Timesheet, Team)</span>
+        </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
           <input type="checkbox" id="m_isAdmin" style="width:auto">
-          <span>Admin (can see team-wide activity and change workspace settings)</span>
+          <span>Admin (sees everything, manages settings, releases and groups)</span>
         </label>
       </div>
       <div class="modal__footer">
+        <button type="button" class="btn btn--ghost btn--danger" id="deleteMemberBtn" hidden>Remove</button>
         <div class="modal__footer-right">
           <button type="button" class="btn btn--ghost" id="cancelMemberModalBtn">Cancel</button>
-          <button type="submit" class="btn btn--primary">Add member</button>
+          <button type="submit" class="btn btn--primary" id="memberSubmitBtn">Add member</button>
         </div>
       </div>
     </form>
