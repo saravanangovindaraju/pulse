@@ -516,6 +516,32 @@ table.data-table{ width: 100%; border-collapse: collapse; min-width: 1160px; }
 .dep-chips{ display: flex; gap: 4px; flex-wrap: wrap; }
 .dep-chip{ font-family: var(--font-mono); font-size: 10.5px; background: var(--surface-raised); color: var(--text-dim); padding: 2px 6px; border-radius: 5px; }
 
+.th-sub{ display: block; text-transform: none; font-weight: 400; letter-spacing: 0; color: var(--text-faint); margin-top: 2px; font-family: var(--font-mono); font-size: 10px; }
+
+.plan-override-input{
+  width: 70px; background: var(--surface); border: 1px solid var(--border); border-radius: 5px;
+  padding: 4px 6px; font-family: var(--font-mono); font-size: 12px; color: var(--text);
+}
+.plan-override-input:focus{ outline: none; border-color: var(--amber); }
+.reason-input{
+  width: 100%; min-width: 220px; background: var(--surface); border: 1px solid var(--red);
+  border-radius: 5px; padding: 5px 8px; font-size: 12px; color: var(--text);
+}
+.reason-input:focus{ outline: none; border-color: var(--amber); }
+.reason-input::placeholder{ color: var(--red); opacity: .7; }
+
+.team-group-row{ cursor: default; }
+.team-group-row td{ padding: 10px 16px; background: var(--surface-raised); border-bottom: 1px solid var(--border); }
+.team-group-row:hover{ background: var(--surface-raised) !important; }
+.team-group-row__inner{ display: flex; align-items: center; gap: 12px; }
+.team-group-row__name{ font-weight: 700; font-size: 12.5px; }
+.team-group-row__count{ font-size: 11px; color: var(--text-faint); }
+.team-group-row__totals{ margin-left: auto; font-size: 11px; color: var(--text-dim); }
+.team-group-row.is-dragover td{ background: var(--amber-dim) !important; box-shadow: inset 0 0 0 2px var(--amber); }
+.team-dev-row[draggable="true"]{ cursor: grab; }
+.team-dev-row[draggable="true"]:active{ cursor: grabbing; }
+.team-dev-row.is-dragging{ opacity: .4; }
+
 /* ============================================================
    Dependency graph
    ============================================================ */
@@ -555,7 +581,7 @@ table.data-table{ width: 100%; border-collapse: collapse; min-width: 1160px; }
 }
 .day-group__head .rule{ flex: 1; height: 1px; background: var(--border-soft); }
 .log-row{
-  display: grid; grid-template-columns: 30px 130px 1fr 90px 1fr 32px; gap: 12px; align-items: center;
+  display: grid; grid-template-columns: 130px 1fr 90px 1fr 32px; gap: 12px; align-items: center;
   padding: 10px 14px; background: var(--surface); border: 1px solid var(--border-soft); border-radius: var(--radius-md);
   margin-bottom: 6px; font-size: 12.5px;
 }
