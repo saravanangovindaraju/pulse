@@ -16,13 +16,25 @@
    ============================================================ */
 
 window.FIREBASE_CONFIG = {
-  apiKey: "",
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: "",
+  apiKey: "AIzaSyDpYkHXUZv8eZEWQxBao3Zl_Krwd0TZJvg",
+  authDomain: "pulse-ae11b.firebaseapp.com",
+  projectId: "pulse-ae11b",
+  storageBucket: "pulse-ae11b.firebasestorage.app",
+  messagingSenderId: "808652078609",
+  appId: "1:808652078609:web:3b46c286c625597552bbb0",
+  measurementId: "G-5P39YTNN1F"
 };
+
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+// const firebaseConfig = {
+//   apiKey: "AIzaSyDpYkHXUZv8eZEWQxBao3Zl_Krwd0TZJvg",
+//   authDomain: "pulse-ae11b.firebaseapp.com",
+//   projectId: "pulse-ae11b",
+//   storageBucket: "pulse-ae11b.firebasestorage.app",
+//   messagingSenderId: "808652078609",
+//   appId: "1:808652078609:web:3b46c286c625597552bbb0",
+//   measurementId: "G-5P39YTNN1F"
+// };
 
 // Change this if you want more than one independent board sharing
 // the same Firebase project (e.g. one per team).
