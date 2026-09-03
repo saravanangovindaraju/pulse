@@ -16,24 +16,13 @@
    ============================================================ */
 
 window.FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDpYkHXUZv8eZEWQxBao3Zl_Krwd0TZJvg",
-  authDomain: "pulse-ae11b.firebaseapp.com",
-  projectId: "pulse-ae11b",
-  storageBucket: "pulse-ae11b.firebasestorage.app",
-  messagingSenderId: "808652078609",
-  appId: "1:808652078609:web:32b9aab7feba6f6252bbb0",
-  measurementId: "G-VE2FYX7ZLG"
+  apiKey: "",
+  authDomain: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: "",
 };
-
-// const firebaseConfig = {
-//   apiKey: "AIzaSyDpYkHXUZv8eZEWQxBao3Zl_Krwd0TZJvg",
-//   authDomain: "pulse-ae11b.firebaseapp.com",
-//   projectId: "pulse-ae11b",
-//   storageBucket: "pulse-ae11b.firebasestorage.app",
-//   messagingSenderId: "808652078609",
-//   appId: "1:808652078609:web:32b9aab7feba6f6252bbb0",
-//   measurementId: "G-VE2FYX7ZLG"
-// };
 
 // Change this if you want more than one independent board sharing
 // the same Firebase project (e.g. one per team).
