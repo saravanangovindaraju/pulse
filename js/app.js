@@ -118,7 +118,7 @@
     return s;
   }
 
-  const DEPLOY_GUIDE_VERSION = 2;
+  const DEPLOY_GUIDE_VERSION = 3;
 
   function DEFAULT_DEPLOY_GUIDE(){
     return {
@@ -126,6 +126,11 @@
       updatedAt: null,
       updatedBy: null,
       sections: [
+        {
+          id: uid('sec'),
+          title: 'Phase 1 — Build & merge to release branch',
+          body: 'This phase gets a change built and merged into the release branch. Phase 2 (below) covers promoting that build out to real environments.',
+        },
         {
           id: uid('sec'),
           title: '1. Merge to the release library',
@@ -143,28 +148,38 @@
         },
         {
           id: uid('sec'),
+          title: 'Phase 2 — Promote & deploy (Secondary PERF, PROD Internal & PROD)',
+          body: 'Once uxmgr-web has built successfully in Phase 1, this phase promotes that build and deploys it via GitOps + ArgoCD.\n\nEnvironments supported: DEV, TEST, PERF, Secondary PERF, PROD Internal, PROD.\n\nImportant: promoting to PERF with Aryabhata also promotes Secondary PERF at the same time — if Secondary PERF is currently running a different build for someone else, coordinate first, and revert it back afterward if needed.',
+        },
+        {
+          id: uid('sec'),
           title: '4. Promote with Aryabhata',
-          body: 'Once uxmgr-web has built successfully, promote release/hotfix branches using the Aryabhata bot:\n\n@Aryabhata promote <uxmgr-web:build number> to perf\n\nExample:\n@Aryabhata promote uxmgr-web:1.0.0-357rbwb17.de55a36 to perf\n\nNote: Bamboo is configured to auto-build on all of these branches:\n1. feature/*\n2. develop\n3. release/*\n4. hotfix/*',
+          body: 'Promote release/hotfix branches using the Aryabhata bot:\n\n@Aryabhata promote <uxmgr-web:build number> to perf\n\nExample:\n@Aryabhata promote uxmgr-web:1.0.0-357rbwb17.de55a36 to perf\n\nNote: Bamboo is configured to auto-build on all of these branches:\n1. feature/*\n2. develop\n3. release/*\n4. hotfix/*',
         },
         {
           id: uid('sec'),
-          title: '5. Artifact storage',
-          body: 'Bamboo-generated artifacts are stored in GAR (Google Artifact Registry).\n\nOnly the develop branch is stored by default — other branches build and deploy without being retained in GAR unless promoted.',
+          title: '5. Update the GitOps config with the new build number',
+          body: 'Before raising the GitOps PR, update the image tag in the relevant environment file(s) in the gitops-v1 repo:\n\nperf.yaml — for PERF and Secondary PERF\n\n![perf.yaml with the image tag updated](assets/deploy-guide/09-gitops-perf-yaml.png)\n\nprdus.yaml — for PROD Internal / PROD (US)\n\n![prdus.yaml with the image tag updated](assets/deploy-guide/10-gitops-prdus-yaml.png)\n\nspec.yaml — helm chart version for PROD (US and CA)\n\n![spec.yaml showing prdus and prdca environments](assets/deploy-guide/11-gitops-spec-yaml.png)',
         },
         {
           id: uid('sec'),
-          title: '6. Feature branches',
-          body: 'Raise a GitOps PR to deploy a feature branch.',
+          title: '6. Raise a GitOps PR',
+          body: 'A GitOps PR is required to deploy any branch\'s artifact to any environment — DEV, TEST, PERF, Secondary PERF, PROD Internal, and PROD all go through this same PR process in gitops-v1.\nhttps://bitbucket.org/calixprod/gitops-v1/pull-requests/\n\n![Creating a pull request in gitops-v1 with the updated env files](assets/deploy-guide/12-gitops-create-pr.png)\n\n![Open pull requests list in gitops-v1](assets/deploy-guide/13-gitops-pr-list.png)\n\nMerging the PR triggers the actual deployment via ArgoCD.',
         },
         {
           id: uid('sec'),
-          title: '7. ArgoCD access & deployment',
-          body: 'Raise a CPLE ticket for ArgoCD access.\nhttps://argocd.internal.mgmt.xilac.net\n\nAny branch\'s artifact can be deployed to any environment.\nSupports 4 environments: DEV, TEST, PERF, PROD.',
+          title: '7. ArgoCD access',
+          body: 'Raise a PLAT ticket for ArgoCD access.\nhttps://argocd.internal.mgmt.xilac.net',
         },
         {
           id: uid('sec'),
           title: '8. Environment permissions',
-          body: 'DEV, TEST, PERF: no permission needed — deploy freely.\n\nPROD: deploy through COS-D with MOP — approval needed.',
+          body: 'DEV, TEST, PERF, Secondary PERF: no permission needed — deploy freely via the GitOps PR.\n\nPROD Internal & PROD: requires a COSD change request with MOP — approval needed before deploying.\nhttps://calix.atlassian.net/servicedesk/customer/portal/8\n\nA COSD request needs: the branch being deployed, artifact information (Bamboo build link + GitOps PR link), and the version number to deploy. It goes through three approval stages in order: Change Management Approval → Level 1 Approval → Manager Approval.\n\n![Example COSD change request with its approval chain](assets/deploy-guide/14-cosd-request.png)',
+        },
+        {
+          id: uid('sec'),
+          title: '9. Artifact storage',
+          body: 'Bamboo-generated artifacts are stored in GAR (Google Artifact Registry).\n\nOnly the develop branch is stored by default — other branches build and deploy without being retained in GAR unless promoted.',
         },
       ],
     };
