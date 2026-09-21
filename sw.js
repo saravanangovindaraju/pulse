@@ -1,4 +1,4 @@
-const CACHE = 'pulse-v16';
+const CACHE = 'pulse-v17';
 const ASSETS = [
   './',
   './index.html',
@@ -18,7 +18,13 @@ const ASSETS = [
   './assets/deploy-guide/05-build-number-comment.png',
   './assets/deploy-guide/06-package-json.png',
   './assets/deploy-guide/07-dockerfile.png',
-  './assets/deploy-guide/08-release-build-success.png'
+  './assets/deploy-guide/08-release-build-success.png',
+  './assets/deploy-guide/09-gitops-perf-yaml.png',
+  './assets/deploy-guide/10-gitops-prdus-yaml.png',
+  './assets/deploy-guide/11-gitops-spec-yaml.png',
+  './assets/deploy-guide/12-gitops-create-pr.png',
+  './assets/deploy-guide/13-gitops-pr-list.png',
+  './assets/deploy-guide/14-cosd-request.png'
 ];
 
 self.addEventListener('install', (e) => {
