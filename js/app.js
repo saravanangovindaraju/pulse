@@ -109,6 +109,27 @@
     if (!s.weeklyPlan) s.weeklyPlan = {};
     if (!s.weeklyPlan.overrides) s.weeklyPlan.overrides = {}; // { [groupId]: { [weekStartISO]: hours } }
     if (!s.weeklyPlan.reasons) s.weeklyPlan.reasons = {};     // { [devId]: { [weekStartISO]: "reason text" } }
+    // Repair dates saved while the UTC-shift bug existed: in zones ahead of UTC a week start was
+    // stored as the Sunday BEFORE the intended Monday. A genuine week start is never a Sunday.
+    if (!s.migrations) s.migrations = {};
+    const isSunday = (iso) => !!iso && new Date(iso + 'T00:00:00').getDay() === 0;
+    s.tickets.forEach(t => { if (isSunday(t.plannedWeekStart)) t.plannedWeekStart = addDaysISO(t.plannedWeekStart, 1); });
+    [s.weeklyPlan.overrides, s.weeklyPlan.reasons].forEach(byOwner => {
+      Object.keys(byOwner).forEach(owner => {
+        const fixed = {};
+        Object.keys(byOwner[owner]).forEach(w => { fixed[isSunday(w) ? addDaysISO(w, 1) : w] = byOwner[owner][w]; });
+        byOwner[owner] = fixed;
+      });
+    });
+    if (!s.migrations.tzDateFix){
+      s.releases.forEach(r => {
+        if (r.isDefault && r.name === 'Sprint 24.1' && isSunday(r.startDate)){ // seeded release only
+          r.startDate = addDaysISO(r.startDate, 1);
+          if (r.endDate) r.endDate = addDaysISO(r.endDate, 1);
+        }
+      });
+      s.migrations.tzDateFix = true;
+    }
     if (!s.deploymentGuide || !Array.isArray(s.deploymentGuide.sections)){
       s.deploymentGuide = DEFAULT_DEPLOY_GUIDE();
     } else if (!s.deploymentGuide.updatedAt && (s.deploymentGuide.version||1) < DEPLOY_GUIDE_VERSION){
@@ -225,10 +246,16 @@
     return prefix + '_' + Math.random().toString(36).slice(2, 9);
   }
 
+  /** Formats a Date as YYYY-MM-DD using LOCAL calendar fields. Never use toISOString() for
+   *  date-only values: it converts to UTC and shifts the day for any timezone ahead of UTC. */
+  function localISODate(d){
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+
   function todayISO(offsetDays = 0){
     const d = new Date();
     d.setDate(d.getDate() + offsetDays);
-    return d.toISOString().slice(0, 10);
+    return localISODate(d);
   }
 
   function seedState(){
@@ -610,16 +637,18 @@
     const d = new Date(iso + 'T00:00:00');
     const day = d.getDay(); // 0=Sun..6=Sat
     d.setDate(d.getDate() + (day === 0 ? -6 : 1 - day));
-    return d.toISOString().slice(0, 10);
+    return localISODate(d);
   }
   function addDaysISO(iso, n){
     const d = new Date(iso + 'T00:00:00');
     d.setDate(d.getDate() + n);
-    return d.toISOString().slice(0, 10);
+    return localISODate(d);
   }
+  const MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   function shortDate(iso){
     const d = new Date(iso + 'T00:00:00');
-    return `${d.getDate()}/${d.toLocaleString(undefined, { month: 'short' })}`;
+    // Fixed English abbreviations: locale-based 'short' months vary (e.g. "Sept" in en-GB/en-IN).
+    return `${d.getDate()}/${MONTH_ABBR[d.getMonth()]}`;
   }
   /** "3/Aug - 7/Aug" style label for the Mon-Fri work week containing this Monday date. */
   function weekRangeLabel(mondayISO){
@@ -1360,7 +1389,7 @@
           <div class="deploy-section-body-text">${renderGuideBody(sec.body)}</div>
         </div>
       `).join('')}
-      ${guide.updatedAt ? `<p class="field__hint">Last updated ${fmtDate(guide.updatedAt.slice(0,10))}${guide.updatedBy && devById(guide.updatedBy) ? ' by ' + escapeHTML(devById(guide.updatedBy).name) : ''}.</p>` : ''}
+      ${guide.updatedAt ? `<p class="field__hint">Last updated ${fmtDate(localISODate(new Date(guide.updatedAt)))}${guide.updatedBy && devById(guide.updatedBy) ? ' by ' + escapeHTML(devById(guide.updatedBy).name) : ''}.</p>` : ''}
     `;
   }
 
@@ -1385,8 +1414,8 @@
   /** Up to 4 Monday dates covering the current calendar month (5th week folds into week 4). */
   function currentMonthWeeks(){
     const now = new Date();
-    const first = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0,10);
-    const last = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().slice(0,10);
+    const first = localISODate(new Date(now.getFullYear(), now.getMonth(), 1));
+    const last = localISODate(new Date(now.getFullYear(), now.getMonth() + 1, 0));
     const weeks = weeksInRange(first, last);
     return weeks.slice(0, 4);
   }
